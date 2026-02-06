@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Save System</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #eee; }
+        button { margin: 5px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
+        .section { margin: 20px 0; padding: 15px; background: #16213e; border-radius: 8px; }
+        .log { background: #0f0f23; padding: 10px; margin: 10px 0; max-height: 300px; overflow-y: auto; font-size: 12px; }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .info { color: #60a5fa; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test del Sistema de Guardado</h1>
+    
+    <div class="section">
+        <h2>1. Estado Actual de localStorage</h2>
+        <div id="currentState" class="log"></div>
+        <button onclick="refreshState()">🔄 Refrescar Estado</button>
+    </div>
+    
+    <div class="section">
+        <h2>2. Simular Progreso</h2>
+        <button onclick="setProgress(0, 0, 0)">Nueva Partida (opp:1, round:1, score:0)</button>
+        <button onclick="setProgress(1, 2, 15)">Oponente 2, Ronda 3, Score 15</button>
+        <button onclick="setProgress(2, 1, 25)">Oponente 3, Ronda 2, Score 25</button>
+        <button onclick="setProgress(3, 3, 35)">Oponente 4, Ronda 4, Score 35</button>
+        <button onclick="setProgress(4, 5, 45)">Oponente 5, Ronda 6, Score 45</button>
+    </div>
+    
+    <div class="section">
+        <h2>3. Acciones</h2>
+        <button onclick="clearSave()">🗑️ Eliminar Guardado</button>
+        <button onclick="testReadFunction()">🔍 Probar readGameSave()</button>
+        <button onclick="openGame()">🎮 Abrir Juego (index.html)</button>
+    </div>
+    
+    <div class="section">
+        <h2>4. Log de Pruebas</h2>
+        <div id="testLog" class="log"></div>
+        <button onclick="clearLog()">Limpiar Log</button>
+    </div>
+
+    <script>
+        var ROUNDS = [
+            {id:"tft", num:5},
+            {id:"all_d", num:4},
+            {id:"all_c", num:4},
+            {id:"grudge", num:5},
+            {id:"prober", num:7}
+        ];
+        
+        function log(msg, type) {
+            var el = document.getElementById('testLog');
+            var className = type || 'info';
+            el.innerHTML += '<div class="' + className + '">' + new Date().toLocaleTimeString() + ' - ' + msg + '</div>';
+            el.scrollTop = el.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('testLog').innerHTML = '';
+        }
+        
+        function refreshState() {
+            var el = document.getElementById('currentState');
+            var raw = localStorage.getItem('trustGameSave');
+            
+            if (!raw) {
+                el.innerHTML = '<div class="error">❌ No hay datos guardados en localStorage.trustGameSave</div>';
+                return;
+            }
+            
+            try {
+                var data = JSON.parse(raw);
+                var opponentName = ROUNDS[data.roundIndex] ? ROUNDS[data.roundIndex].id : 'unknown';
+                var maxRounds = ROUNDS[data.roundIndex] ? ROUNDS[data.roundIndex].num : '?';
+                
+                var html = '<pre class="success">';
+                html += '✅ Datos encontrados:\n\n';
+                html += '   saved: ' + data.saved + '\n';
+                html += '   roundIndex: ' + data.roundIndex + ' (' + opponentName + ')\n';
+                html += '   roundNum: ' + data.roundNum + ' (ronda ' + (data.roundNum + 1) + ' de ' + maxRounds + ')\n';
+                html += '   totalScore: ' + data.totalScore + '\n';
+                html += '   scoreboardA: ' + data.scoreboardA + '\n';
+                html += '   scoreboardB: ' + data.scoreboardB + '\n';
+                html += '   savedAt: ' + data.savedAt + '\n\n';
+                html += 'RAW: ' + raw;
+                html += '</pre>';
+                
+                el.innerHTML = html;
+            } catch(e) {
+                el.innerHTML = '<div class="error">❌ Error parseando: ' + e.message + '</div><pre>' + raw + '</pre>';
+            }
+        }
+        
+        function setProgress(roundIndex, roundNum, score) {
+            var data = {
+                saved: true,
+                roundIndex: roundIndex,
+                roundNum: roundNum,
+                totalScore: score,
+                currentOpponent: ROUNDS[roundIndex].id,
+                scoreboardA: Math.floor(score / 3),
+                scoreboardB: Math.floor(score / 4),
+                savedAt: new Date().toISOString()
+            };
+            
+            localStorage.setItem('trustGameSave', JSON.stringify(data));
+            log('✅ Guardado: roundIndex=' + roundIndex + ', roundNum=' + roundNum + ', score=' + score, 'success');
+            refreshState();
+        }
+        
+        function clearSave() {
+            localStorage.removeItem('trustGameSave');
+            log('🗑️ Guardado eliminado', 'info');
+            refreshState();
+        }
+        
+        function testReadFunction() {
+            // Simular la función readGameSave
+            try {
+                var raw = localStorage.getItem('trustGameSave');
+                if (!raw) {
+                    log('readGameSave() → null (no hay datos)', 'info');
+                    return;
+                }
+                
+                var data = JSON.parse(raw);
+                
+                if (!data || data.saved !== true) {
+                    log('readGameSave() → null (saved !== true)', 'error');
+                    return;
+                }
+                
+                var result = {
+                    roundIndex: (typeof data.roundIndex === 'number') ? data.roundIndex : 0,
+                    roundNum: (typeof data.roundNum === 'number') ? data.roundNum : 0,
+                    totalScore: (typeof data.totalScore === 'number') ? data.totalScore : 0,
+                    scoreboardA: data.scoreboardA || 0,
+                    scoreboardB: data.scoreboardB || 0,
+                    currentOpponent: data.currentOpponent || ROUNDS[data.roundIndex || 0].id
+                };
+                
+                // Verificar si hay progreso
+                var hasProgress = result.roundIndex > 0 || result.roundNum > 0 || result.totalScore > 0;
+                
+                log('readGameSave() → ' + JSON.stringify(result), 'success');
+                log('hasProgress: ' + hasProgress + ' (roundIndex=' + result.roundIndex + ', roundNum=' + result.roundNum + ', totalScore=' + result.totalScore + ')', hasProgress ? 'success' : 'info');
+                
+            } catch(e) {
+                log('readGameSave() → ERROR: ' + e.message, 'error');
+            }
+        }
+        
+        function openGame() {
+            window.open('index.html', '_blank');
+            log('🎮 Abriendo index.html...', 'info');
+        }
+        
+        // Inicializar
+        refreshState();
+        log('🧪 Test page loaded', 'info');
+    </script>
+</body>
+</html>

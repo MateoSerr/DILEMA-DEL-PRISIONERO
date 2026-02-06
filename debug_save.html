@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Save Game</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        pre { background: #f0f0f0; padding: 10px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .green { background: #4CAF50; color: white; }
+        .red { background: #f44336; color: white; }
+        .blue { background: #2196F3; color: white; }
+    </style>
+</head>
+<body>
+    <h1>Debug: Partida Guardada</h1>
+    
+    <h2>Estado Actual del LocalStorage:</h2>
+    <pre id="localStorageState"></pre>
+    
+    <h2>Acciones:</h2>
+    <button class="green" onclick="setRoundIndex(1)">Simular roundIndex = 1 (all_d)</button>
+    <button class="green" onclick="setRoundIndex(2)">Simular roundIndex = 2 (all_c)</button>
+    <button class="green" onclick="setRoundIndex(3)">Simular roundIndex = 3 (grudge)</button>
+    <button class="red" onclick="clearSave()">Borrar Guardado</button>
+    <button class="blue" onclick="refresh()">Refrescar Estado</button>
+    
+    <h2>Ir al Juego:</h2>
+    <button onclick="window.location.href='index.html'">Ir al Juego Principal</button>
+    
+    <script>
+        function refresh() {
+            var saved = localStorage.getItem('trustGameSave');
+            var pre = document.getElementById('localStorageState');
+            if (saved) {
+                var data = JSON.parse(saved);
+                pre.textContent = JSON.stringify(data, null, 2);
+            } else {
+                pre.textContent = 'No hay partida guardada';
+            }
+        }
+        
+        function setRoundIndex(index) {
+            var opponents = ['tft', 'all_d', 'all_c', 'grudge', 'prober'];
+            var rounds = [5, 4, 4, 5, 7];
+            var data = {
+                saved: true,
+                roundIndex: index,
+                roundNum: 0,
+                totalScore: index * 5, // Score simulado
+                currentOpponent: opponents[index],
+                scoreboardA: 0,
+                scoreboardB: 0,
+                savedAt: new Date().toISOString()
+            };
+            localStorage.setItem('trustGameSave', JSON.stringify(data));
+            alert('Guardado simulado: roundIndex = ' + index + ' (' + opponents[index] + ')');
+            refresh();
+        }
+        
+        function clearSave() {
+            localStorage.removeItem('trustGameSave');
+            alert('Guardado borrado');
+            refresh();
+        }
+        
+        // Cargar al inicio
+        window.onload = function() {
+            refresh();
+        };
+    </script>
+</body>
+</html>
