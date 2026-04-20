@@ -85,17 +85,36 @@ function Slideshow(config){
 	// Add Object
 	self.add = function(objectConfig){
 
-		// Create object
-		var Classname = window[objectConfig.type];
-		objectConfig.slideshow = self;
-		var obj = new Classname(objectConfig);
-		obj.slideshow = self;
+		try {
+			// Create object
+			var Classname = window[objectConfig.type];
+			if (!Classname) {
+				console.error("Slideshow.add: tipo desconocido '" + objectConfig.type + "'");
+				return null;
+			}
+			objectConfig.slideshow = self;
+			var obj = new Classname(objectConfig);
+			obj.slideshow = self;
 
-		// Remember it
-		self.objects[objectConfig.id] = obj;
+			// Remember it
+			self.objects[objectConfig.id] = obj;
 
-		// Add it for real!
-		return obj.add();
+			// Add it for real!
+			return obj.add();
+		} catch (err) {
+			console.error("Slideshow.add ERROR al crear '" + (objectConfig.id || objectConfig.type) + "':", err);
+			var fallback = document.createElement("div");
+			fallback.className = "slide-error";
+			fallback.style.cssText = "padding:20px;color:#c00;font-family:sans-serif;max-width:600px;";
+			fallback.innerHTML = "<strong>Error al cargar el juego.</strong><br><br>" +
+				(err.message || String(err)) +
+				"<br><br>Abre la consola del navegador (F12) para más detalles.";
+			self.dom.appendChild(fallback);
+			// Stub para que el resto del slide no falle al usar o.iterated, etc.
+			var stub = { dom: fallback, add: function(){ return null; }, remove: function(){}, dehighlightPayoff: function(){}, highlightPayoff: function(){}, introMachine: function(){}, oneoffHighlight1: function(){}, oneoffHighlight2: function(){} };
+			if (objectConfig.id) self.objects[objectConfig.id] = stub;
+			return null;
+		}
 
 	};
 
@@ -135,6 +154,10 @@ function Slideshow(config){
 		self.currentSlide = self.slides.find(function(slide){
 			return slide.id==id;
 		});
+		if (!self.currentSlide) {
+			console.error('🎪 Slide no encontrada con id:', id);
+			return;
+		}
 		self.slideIndex = self.slides.indexOf(self.currentSlide);
 		console.log('🎪 Slide encontrada, índice:', self.slideIndex);
 

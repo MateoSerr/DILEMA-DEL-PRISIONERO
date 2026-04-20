@@ -60,8 +60,8 @@ SLIDES.push({
 		});
 		self.add({
 			id:"subtitle", type:"TextBox",
-			x:267, y:344, width:420,
-			align:"center", color:"#aaa", size:15,
+			x:130, y:344, width:700,
+			align:"center", color:"#888", size:12,
 			text_id:"subtitle"
 		});
 

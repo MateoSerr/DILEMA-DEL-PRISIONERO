@@ -13,11 +13,12 @@ var PD = {};
 PD.COOPERATE = "COOPERATE";
 PD.CHEAT = "CHEAT";
 
+// Matriz DPI: R=3, T=5, S=0, P=1 (única fuente de verdad para los payoffs)
 PD.PAYOFFS_DEFAULT = {
-	P: 0, // punishment: neither of you get anything
-	S: -1, // sucker: you put in coin, other didn't.
-	R: 2, // reward: you both put 1 coin in, both got 3 back
-	T: 3 // temptation: you put no coin, got 3 coins anyway
+	P: 1,  // punishment: ambos traicionan → +1 cada uno (el "1" de la matriz viene de aquí)
+	S: 0,  // sucker: tú cooperas, él traiciona → tú 0
+	R: 3,  // reward: ambos cooperan → +3 cada uno
+	T: 5   // temptation: tú traicionas, él coopera → tú +5
 };
 
 PD.PAYOFFS = JSON.parse(JSON.stringify(PD.PAYOFFS_DEFAULT));

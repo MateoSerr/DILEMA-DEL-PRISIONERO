@@ -1,4 +1,4 @@
-﻿{"frames": {
+{"frames": {
 
 "iterated_peep0000":
 {
@@ -187,7 +187,7 @@
 "meta": {
 	"app": "Adobe Animate",
 	"version": "15.2.0.66",
-	"image": "iterated_peep.png",
+	"image": "iterated_peep.png?v=9",
 	"format": "RGBA8888",
 	"size": {"w":2048,"h":2048},
 	"scale": "1"

@@ -15,93 +15,324 @@ Loader.addToManifest(Loader.manifest,{
 
 });
 
+// Antes: relleno blanco elíptico sobre la textura para tapar un artefacto; en la práctica borraba
+// demasiado contorno de la cabeza (cabezas “rotas”). La textura original se deja intacta.
+// (Si hiciera falta un parche puntual, hacerlo en PNG o con elipse mucho más pequeña y centrada.)
+(function patchPeepHeadLineOnce() {
+	window._peepHeadLinePatched = true;
+})();
+
 function Iterated(config){
 
 	var self = this;
 	self.id = config.id;
+	// Depuración: abre con ?debugPeep=1 (o &debugPeep=1) y mira consola + marco rojo en los monitos.
+	function isDebugPeep(){
+		try { return /[?&]debugPeep=1(?:&|$)/.test(String(window.location.search || "")); } catch (e) { return false; }
+	}
 	
 	// DOM
 	self.dom = document.createElement("div");
-	self.dom.className = "object";
+	self.dom.className = "object iterated-container";
 	self.dom.style.left = config.x+"px";
 	self.dom.style.top = config.y+"px";
+	self.dom.style.width = "700px";
+	self.dom.style.height = "250px";
+	self.dom.style.minHeight = "250px";
+	// .object ya es position:absolute; NO usar relative aquí: rompe el layout 960×540 del slideshow.
+	self.dom.style.visibility = "visible";
+	self.dom.style.opacity = "1";
+	self.dom.style.zIndex = "2";
+	self.dom.style.background = "transparent";
 
-	// APP
-	var app = new PIXI.Application(700, 250, {transparent:true, resolution:2});
+	// forceCanvas + resolution:1 evita recortes/rareos WebGL en algunos GPUs; los monitos en reposo van en DOM (CSS).
+	var app = new PIXI.Application(700, 250, {transparent:true, resolution:1, antialias:true, forceCanvas:true});
 	self.app = app;
-	app.view.style.width = 700;
-	app.view.style.height = 250;
+	app.view.style.width = "700px";
+	app.view.style.height = "250px";
+	app.view.style.display = "block";
+	app.view.style.position = "absolute";
+	app.view.style.left = "0";
+	app.view.style.top = "0";
+	app.view.style.zIndex = "0";
+	app.view.style.visibility = "visible";
+	app.view.style.opacity = "1";
 	self.dom.appendChild(app.view);
 
-	// LABELS
-	var _l1 = _makeLabel("label_they_cooperate", {x:354, y:34, rotation:45, align:"center", color:"#333333", size:15, width:70, lineHeight:1});
-	self.dom.appendChild(_l1);
-	var _l2 = _makeLabel("label_you_cooperate", {x:272, y:35, rotation:-45, align:"center", color:"#333333", size:15, width:70, lineHeight:1});
-	self.dom.appendChild(_l2);
-	var _l3 = _makeLabel("label_they_cheat", {x:406, y:86, rotation:45, align:"center", color:"#333333", size:15, width:70, lineHeight:1});
-	self.dom.appendChild(_l3);
-	var _l4 = _makeLabel("label_you_cheat", {x:224, y:83, rotation:-45, align:"center", color:"#333333", size:15, width:70, lineHeight:1});
-	self.dom.appendChild(_l4);
+	// Monitos en reposo: PNG ya recortado (151×201) — evita canvas/atlas en runtime. Asset: iterated_peep_idle.png
+	function resolveAssetUrl(rel) {
+		var base = (typeof document !== "undefined" && document.baseURI) ? document.baseURI : window.location.href;
+		try {
+			return new URL(rel, base).href;
+		} catch (e) {
+			try { return new URL(rel, window.location.href).href; } catch (e2) { return rel; }
+		}
+	}
+	// Misma URL para <img> DOM y cuerpo PIXI (Sprite): un solo asset, sin atlas U + arcos encima.
+	var _idlePeepAssetV = "7";
+	var _idlePeepUrl = resolveAssetUrl("assets/iterated/iterated_peep_idle.png?v=" + _idlePeepAssetV);
+	function syncAfterPeepImgLoad() {
+		if (typeof self._syncDomPeepsToIteratedRect === "function") {
+			requestAnimationFrame(function(){ self._syncDomPeepsToIteratedRect(); });
+		}
+	}
+	self._peepDomL = document.createElement("div");
+	self._peepDomL.className = "iterated-peep-dom iterated-peep-dom--left";
+	self._peepDomL.setAttribute("aria-hidden", "true");
+	self._peepDomR = document.createElement("div");
+	self._peepDomR.className = "iterated-peep-dom iterated-peep-dom--right";
+	self._peepDomR.setAttribute("aria-hidden", "true");
+	var _peepBox = "151px";
+	var _peepH = "201px";
+	self._peepDomL.style.width = self._peepDomR.style.width = _peepBox;
+	self._peepDomL.style.height = self._peepDomR.style.height = _peepH;
+	self._peepDomL.style.minHeight = self._peepDomR.style.minHeight = _peepH;
+	self._peepDomL.style.boxSizing = self._peepDomR.style.boxSizing = "border-box";
+	self._peepDomL.style.display = self._peepDomR.style.display = "block";
+	self._peepImgL = document.createElement("img");
+	self._peepImgL.className = "iterated-peep-idle-img";
+	self._peepImgL.alt = "";
+	self._peepImgL.draggable = false;
+	self._peepDomL.appendChild(self._peepImgL);
+	var _flipR = document.createElement("div");
+	_flipR.className = "iterated-peep-flip";
+	self._peepImgR = document.createElement("img");
+	self._peepImgR.className = "iterated-peep-idle-img";
+	self._peepImgR.alt = "";
+	self._peepImgR.draggable = false;
+	_flipR.appendChild(self._peepImgR);
+	self._peepDomR.appendChild(_flipR);
+	(function initPeepSprites(){
+		var idleLocal = _idlePeepUrl;
+		self._peepImgL.onload = self._peepImgR.onload = function(){ syncAfterPeepImgLoad(); };
+		self._peepImgL.onerror = self._peepImgR.onerror = function(){
+			console.warn("No se cargó iterated_peep_idle.png — debe existir en assets/iterated/ (PNG 151×201 recortado del atlas).");
+		};
+		self._peepImgL.src = idleLocal;
+		self._peepImgR.src = idleLocal;
+		// Imagen en caché: onload puede no dispararse.
+		requestAnimationFrame(function(){
+			if (self._peepImgL && self._peepImgL.complete && self._peepImgL.naturalWidth) syncAfterPeepImgLoad();
+		});
+	})();
+
+	// Reposo: monitos como <img> (PNG recortado); se oculta el canvas PIXI para que no componga encima en algunos navegadores.
+	self.syncIdlePeepLayers = function(){
+		if (!self._peepDomL || !self._peepDomR || !self.playerA || !self.playerB) return;
+		self._peepDomL.style.visibility = "visible";
+		self._peepDomR.style.visibility = "visible";
+		self.playerA.graphics.visible = false;
+		self.playerB.graphics.visible = false;
+		if (self.app && self.app.view) {
+			self.app.view.style.visibility = "hidden";
+			self.app.view.style.pointerEvents = "none";
+		}
+		if (typeof self._syncDomPeepsToIteratedRect === "function") self._syncDomPeepsToIteratedRect();
+	};
+	self._hideDomPeepsShowPixi = function(){
+		if (!self._peepDomL || !self._peepDomR || !self.playerA || !self.playerB) return;
+		self._peepDomL.style.visibility = "hidden";
+		self._peepDomR.style.visibility = "hidden";
+		self.playerA.graphics.visible = true;
+		self.playerB.graphics.visible = true;
+		if (self.app && self.app.view) {
+			self.app.view.style.visibility = "visible";
+			self.app.view.style.pointerEvents = "";
+		}
+	};
+
+	// Monitos fuera del árbol del slideshow: #main tenía overflow:hidden y recortaba los laterales del tablero.
+	self._syncDomPeepsToIteratedRect = function(){
+		if (!self.dom || !self._peepDomL || !self._peepDomR) return;
+		if (!self.dom.isConnected) return;
+		if (self._peepDomL.style.visibility === "hidden") return;
+		var r = self.dom.getBoundingClientRect();
+		if (r.width < 50 || r.height < 50) return;
+		// Si el rect devuelve un ancho ridículo (bug de layout), no encoger los monitos a un hilo.
+		var rw = r.width;
+		if (!isFinite(rw) || rw < 120 || rw > 1400) rw = 700;
+		var scale = rw / 700;
+		var peepW = 151 * scale;
+		var peepH = 201 * scale;
+		// Un poco menos de pad inferior para bajar el bloque y alejar la cabeza del borde superior del viewport (menos recorte).
+		var padB = 9 * scale;
+		var topY = r.bottom - padB - peepH;
+		if (topY < 2) topY = 2;
+		var lc = r.left + 62 * scale;
+		var rc = r.left + 638 * scale;
+		self._peepDomL.style.left = (lc - peepW / 2) + "px";
+		self._peepDomL.style.top = topY + "px";
+		self._peepDomL.style.width = peepW + "px";
+		self._peepDomL.style.height = peepH + "px";
+		self._peepDomR.style.left = (rc - peepW / 2) + "px";
+		self._peepDomR.style.top = topY + "px";
+		self._peepDomR.style.width = peepW + "px";
+		self._peepDomR.style.height = peepH + "px";
+		if (self._peepImgL && self._peepImgR) {
+			self._peepImgL.style.width = "100%";
+			self._peepImgL.style.height = "100%";
+			self._peepImgR.style.width = "100%";
+			self._peepImgR.style.height = "100%";
+		}
+		if (isDebugPeep()) {
+			self._peepDomL.style.outline = self._peepDomR.style.outline = "3px solid #d00";
+			console.log("[debugPeep] iterated getBoundingClientRect:", Math.round(r.width), "×", Math.round(r.height), "scale:", scale.toFixed(4));
+			console.log("[debugPeep] peep box calculado:", Math.round(peepW), "×", Math.round(peepH));
+			var bL = self._peepDomL.getBoundingClientRect();
+			var bR = self._peepDomR.getBoundingClientRect();
+			console.log("[debugPeep] peepL en pantalla:", Math.round(bL.width), "×", Math.round(bL.height), "@", Math.round(bL.left), Math.round(bL.top));
+			console.log("[debugPeep] peepR en pantalla:", Math.round(bR.width), "×", Math.round(bR.height), "@", Math.round(bR.left), Math.round(bR.top));
+			if (self._peepImgL && self._peepImgL.naturalWidth) console.log("[debugPeep] img natural:", self._peepImgL.naturalWidth, "×", self._peepImgL.naturalHeight);
+		} else {
+			self._peepDomL.style.outline = self._peepDomR.style.outline = "";
+		}
+	};
+	function tearDownDomPeepsOverlay(){
+		if (self._peepPosInterval) {
+			clearInterval(self._peepPosInterval);
+			self._peepPosInterval = null;
+		}
+		if (self._peepResizeObs) {
+			self._peepResizeObs.disconnect();
+			self._peepResizeObs = null;
+		}
+		if (self._peepMutationObs) {
+			self._peepMutationObs.disconnect();
+			self._peepMutationObs = null;
+		}
+		if (self._peepResizeFn) {
+			window.removeEventListener("resize", self._peepResizeFn);
+			self._peepResizeFn = null;
+		}
+		if (self._peepScrollFn) {
+			window.removeEventListener("scroll", self._peepScrollFn, true);
+			self._peepScrollFn = null;
+		}
+		if (self._peepDomL && self._peepDomL.parentNode) self._peepDomL.parentNode.removeChild(self._peepDomL);
+		if (self._peepDomR && self._peepDomR.parentNode) self._peepDomR.parentNode.removeChild(self._peepDomR);
+	}
+	function mountDomPeepsOverlay(){
+		if (!self._peepDomL || self._peepDomL.parentNode === document.body) return;
+		document.body.appendChild(self._peepDomL);
+		document.body.appendChild(self._peepDomR);
+		self._peepDomL.classList.add("iterated-peep-dom--overlay");
+		self._peepDomR.classList.add("iterated-peep-dom--overlay");
+		self._peepResizeFn = function(){ self._syncDomPeepsToIteratedRect(); };
+		window.addEventListener("resize", self._peepResizeFn);
+		self._peepScrollFn = function(){ self._syncDomPeepsToIteratedRect(); };
+		window.addEventListener("scroll", self._peepScrollFn, true);
+		if (window.ResizeObserver) {
+			self._peepResizeObs = new ResizeObserver(self._peepResizeFn);
+			self._peepResizeObs.observe(self.dom);
+		}
+		if (window.MutationObserver) {
+			self._peepMutationObs = new MutationObserver(self._peepResizeFn);
+			self._peepMutationObs.observe(self.dom, { attributes: true, attributeFilter: ["style", "class"] });
+		}
+		self._peepPosInterval = setInterval(function(){ self._syncDomPeepsToIteratedRect(); }, 300);
+	}
 
 	///////////////////////////////////////////////
 	//////////////// THE GRAPHICS /////////////////
 	///////////////////////////////////////////////
 
-	// Peep A
-	self.playerA = new IteratedPeep({});
-	app.stage.addChild(self.playerA.graphics);
-
-	// Peep B
-	self.playerB = new IteratedPeep({opponent:true});
-	app.stage.addChild(self.playerB.graphics);
-
-	// Machine
+	// Fondo de escena (textura ancha gris); oculto para DPI: la matriz es el SVG y los monitos en DOM.
 	self.machine = _makeMovieClip("iterated_machine", {anchorX:0, anchorY:0, scale:0.5});
 	app.stage.addChild(self.machine);
+	self.machine.visible = false;
 
-	// Payoffs
+	self.playerA = new IteratedPeep({ idlePeepUrl: _idlePeepUrl });
+	app.stage.addChild(self.playerA.graphics);
+
+	self.playerB = new IteratedPeep({ opponent: true, idlePeepUrl: _idlePeepUrl });
+	app.stage.addChild(self.playerB.graphics);
+
 	self.payoffs = _makeMovieClip("iterated_payoffs", {scale:0.5});
 	app.stage.addChild(self.payoffs);
 	self.payoffs.x = 350;
 	self.payoffs.y = 125;
 	self.payoffs.gotoAndStop(0);
+	self.payoffs.visible = false;
+
+	app.stage.setChildIndex(self.machine, 0);
+	app.stage.addChild(self.playerA.graphics);
+	app.stage.addChild(self.playerB.graphics);
+
+	// Matriz DPI reemplazo: R,T,S,P desde PD.PAYOFFS (PD.js). El "1" = P (ambos traicionan).
+	var R = PD.PAYOFFS.R, T = PD.PAYOFFS.T, S = PD.PAYOFFS.S, P = PD.PAYOFFS.P;
+	var matrixWrap = document.createElement("div");
+	matrixWrap.className = "payoffs-matrix-replacement";
+	// Sin estos estilos, el bloque puede ocupar todo el ancho y tapar los monitos (canvas).
+	matrixWrap.style.cssText = "position:absolute;left:225px;top:0;width:250px;height:250px;max-width:250px;max-height:250px;box-sizing:border-box;pointer-events:none;z-index:8;overflow:visible;background:transparent;";
+	matrixWrap.innerHTML =
+		"<svg class='pm-diamond' viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'>" +
+		"<defs><linearGradient id='pm-glow' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:#525252'/><stop offset='50%' style='stop-color:#3a3a3a'/><stop offset='100%' style='stop-color:#282828'/></linearGradient></defs>" +
+		"<polygon class='pm-region pm-region-r' data-payoff='R' points='125,8 242,125 125,125 8,125' fill='url(#pm-glow)'/>" +
+		"<polygon class='pm-region pm-region-st' data-payoff='S' points='8,125 125,125 125,8' fill='url(#pm-glow)'/>" +
+		"<polygon class='pm-region pm-region-ts' data-payoff='T' points='125,125 242,125 125,242' fill='url(#pm-glow)'/>" +
+		"<polygon class='pm-region pm-region-p' data-payoff='P' points='125,125 125,242 8,125' fill='url(#pm-glow)'/>" +
+		"<path class='pm-outline' d='M125 8 L242 125 L125 242 L8 125 Z' fill='none' stroke-width='2.5'/>" +
+		"<line x1='125' y1='8' x2='125' y2='242' stroke-width='1.5'/>" +
+		"<line x1='8' y1='125' x2='242' y2='125' stroke-width='1.5'/>" +
+		"</svg>" +
+		"<span class='pm-num pm-r' style='left:92px;top:60px'>"+R+"</span><span class='pm-num pm-r' style='left:134px;top:60px'>"+R+"</span>" +
+		"<span class='pm-num pm-s' style='left:42px;top:116px'>"+S+"</span><span class='pm-num pm-t' style='left:92px;top:116px'>"+T+"</span>" +
+		"<span class='pm-num pm-t' style='left:134px;top:116px'>"+T+"</span><span class='pm-num pm-s' style='left:184px;top:116px'>"+S+"</span>" +
+		"<span class='pm-num pm-p' style='left:92px;top:172px'>"+P+"</span><span class='pm-num pm-p' style='left:134px;top:172px'>"+P+"</span>" +
+		"<div class='pm-edge-label pm-edge-they-cooperate' style='left:128px;top:28px;transform:rotate(45deg)'>"+Words.get("label_they_cooperate")+"</div>" +
+		"<div class='pm-edge-label pm-edge-you-cooperate' style='left:44px;top:30px;transform:rotate(-45deg)'>"+Words.get("label_you_cooperate")+"</div>" +
+		"<div class='pm-edge-label pm-edge-they-cheat' style='left:168px;top:72px;transform:rotate(45deg)'>"+Words.get("label_they_cheat")+"</div>" +
+		"<div class='pm-edge-label pm-edge-you-cheat' style='left:8px;top:72px;transform:rotate(-45deg)'>"+Words.get("label_you_cheat")+"</div>";
+	self.dom.appendChild(matrixWrap);
+	// Los monitos (.iterated-peep-dom) se montan en document.body al llamar add() — ver mountDomPeepsOverlay.
+	self.syncIdlePeepLayers();
+
+	var _l1 = matrixWrap.querySelector(".pm-edge-they-cooperate");
+	var _l2 = matrixWrap.querySelector(".pm-edge-you-cooperate");
+	var _l3 = matrixWrap.querySelector(".pm-edge-they-cheat");
+	var _l4 = matrixWrap.querySelector(".pm-edge-you-cheat");
+
+	self._pmRegions = matrixWrap.querySelectorAll(".pm-region");
+
 	self.highlightPayoff = function(payoffA){
+		for (var i = 0; i < self._pmRegions.length; i++) self._pmRegions[i].classList.remove("highlight");
+		var c = window.DPI_LOW_STIMULUS ? "#999" : "#FFE663";
 		if(payoffA==PD.PAYOFFS.R){
-			self.payoffs.gotoAndStop(4);
-			_l1.style.color = _l2.style.color = "#FFE663";
+			matrixWrap.querySelector(".pm-region-r").classList.add("highlight");
+			_l1.style.color = _l2.style.color = c;
 		}
 		if(payoffA==PD.PAYOFFS.T){
-			self.payoffs.gotoAndStop(5);
-			_l1.style.color = _l4.style.color = "#FFE663";
+			matrixWrap.querySelector(".pm-region-ts").classList.add("highlight");
+			_l1.style.color = _l4.style.color = c;
 		}
 		if(payoffA==PD.PAYOFFS.S){
-			self.payoffs.gotoAndStop(6);
-			_l2.style.color = _l3.style.color = "#FFE663";
+			matrixWrap.querySelector(".pm-region-st").classList.add("highlight");
+			_l2.style.color = _l3.style.color = c;
 		}
 		if(payoffA==PD.PAYOFFS.P){
-			self.payoffs.gotoAndStop(7);
-			_l3.style.color = _l4.style.color = "#FFE663";
+			matrixWrap.querySelector(".pm-region-p").classList.add("highlight");
+			_l3.style.color = _l4.style.color = c;
 		}
 	};
 	self.dehighlightPayoff = function(){
-		self.payoffs.gotoAndStop(3);
+		for (var i = 0; i < self._pmRegions.length; i++) self._pmRegions[i].classList.remove("highlight");
 		[_l1,_l2,_l3,_l4].forEach(function(label){
-			label.style.color = "#333333";
+			label.style.color = "#f2f2f2";
 		});
 	};
 
-	// HACK
+	// HACK (oneoff slides)
 	self.oneoffHighlight1 = function(yourAnswer){
 		self.dehighlightPayoff();
-		self.payoffs.gotoAndStop(1);
+		var c = window.DPI_LOW_STIMULUS ? "#999" : "#FFE663";
 		var your = yourAnswer=="COOPERATE" ? _l2 : _l4;
-		your.style.color = _l3.style.color = "#FFE663";
+		your.style.color = _l3.style.color = c;
 	};
 	self.oneoffHighlight2 = function(yourAnswer){
 		self.dehighlightPayoff();
-		self.payoffs.gotoAndStop(2);
+		var c = window.DPI_LOW_STIMULUS ? "#999" : "#FFE663";
 		var your = yourAnswer=="COOPERATE" ? _l2 : _l4;
-		your.style.color = _l1.style.color = "#FFE663";
+		your.style.color = _l1.style.color = c;
 	};
 
 	// Animiniminimination
@@ -123,7 +354,7 @@ function Iterated(config){
 	});
 	self.introMachine = function(){
 		_introMachine = 40;
-		Loader.sounds.machine_start.volume(0.65).play();
+		if (!window.DPI_LOW_STIMULUS) Loader.sounds.machine_start.volume(0.65).play();
 	};
 
 	///////////////////////////////////////////////
@@ -137,55 +368,101 @@ function Iterated(config){
 			console.error('❌ ERROR: No se encontró LogicClass para id:', id);
 			return;
 		}
+		self.currentOpponentId = id;
 		self.opponentLogic = new LogicClass();
 		self.playerB.chooseHat(id);
 		console.log('✅ Oponente cambiado visualmente a:', id);
 	};
 
-	self.playOneRound = function(yourMove){
-
-		// Make your moves!
-		var A = yourMove;
-		if(yourMove=="TRIP") A=PD.CHEAT;
-		var B = self.opponentLogic.play();
-
-		// Get payoffs
-		var payoffs = PD.getPayoffs(A,B);
-
-		// ANIMATE the moves: betrayal or what?
-		self.playerA.TRIP = (yourMove=="TRIP");
-		var animPromise1 = self.playerA.playMove(payoffs[0]); // reward, temptation, sucker, punishment, etc...
-		var animPromise2 = self.playerB.playMove(payoffs[1]);
-
-		// Animate payoffs
+	self._doRoundWithMoves = function(yourMove, B) {
+		var A = yourMove === "TRIP" ? PD.CHEAT : yourMove;
+		var payoffs = PD.getPayoffs(A, B);
+		self.playerA.TRIP = (yourMove === "TRIP");
+		// Carteles en el canvas PIXI; durante unos segundos se ocultan los monitos DOM.
+		try {
+			self._hideDomPeepsShowPixi();
+			if (self.playerA.showChoiceSign) self.playerA.showChoiceSign(A);
+			if (self.playerB.showChoiceSign) self.playerB.showChoiceSign(B);
+			setTimeout(function(){
+				if (self.syncIdlePeepLayers) self.syncIdlePeepLayers();
+			}, 2600);
+		} catch (e) {
+			console.warn("showChoiceSign:", e);
+			if (self.syncIdlePeepLayers) self.syncIdlePeepLayers();
+		}
+		// OUTCOME_ON (50): usar temporizador real (no solo Tween) para que siempre exista antes del 51
+		// aunque el ticker/Tween esté pausado o el foco esté fuera de la pestaña.
+		var outcomeOnMs = 1100;
+		setTimeout(function() {
+			if (window.DPISpec) DPISpec.logEvent(50);
+		}, outcomeOnMs);
 		Tween_get(self.payoffs)
 			.wait(_s(1.1))
 			.call(function(){
 				self.highlightPayoff(payoffs[0]);
 			});
-		Q.all([animPromise1,animPromise2]).then(function(){
-
-			// Payoff Matrix
+		setTimeout(function(){
 			self.dehighlightPayoff();
-
-			// End Round
 			publish("iterated/round/end", payoffs);
-
-		});
-
-		// Remember own & other's moves
-		self.opponentLogic.remember(B, A);
-
+		}, 2400);
+		if (self.opponentLogic && self.opponentLogic.remember) self.opponentLogic.remember(B, A);
 	};
 
+	self.playOneRound = function(yourMove){
+		var A = yourMove === "TRIP" ? PD.CHEAT : yourMove;
+		var B = self.opponentLogic.play();
+		if (window.DPISpec) {
+			DPISpec.setCurrentStrategy(self.currentOpponentId || "");
+			DPISpec.logEvent(42, { choice: B === PD.COOPERATE ? "C" : "T" });
+		}
+		self._doRoundWithMoves(yourMove, B);
+	};
+
+	/** meta42 opcional: { agent_latency_ms, strategy } para sesión DPI (un solo 42 por ensayo). */
+	self.playOneRoundWithAgentMove = function(yourMove, agentMovePD, meta42){
+		var B = agentMovePD;
+		if (window.DPISpec) {
+			var strat = (meta42 && meta42.strategy) ? meta42.strategy : "balanceador";
+			DPISpec.setCurrentStrategy(strat);
+			DPISpec.logEvent(42, {
+				choice: B === PD.COOPERATE ? "C" : "T",
+				agent_strategy: strat,
+				agent_latency_ms: (meta42 && meta42.agent_latency_ms != null) ? meta42.agent_latency_ms : ""
+			});
+		}
+		self._doRoundWithMoves(yourMove, B);
+	};
+
+	function runAfterLatency(yourMove, getB) {
+		var latencyMs = (window.DPISpec && DPISpec.getAgentLatencyMs) ? DPISpec.getAgentLatencyMs() : 500;
+		setTimeout(function(){
+			var B = getB();
+			if (window.DPISpec) {
+				DPISpec.setCurrentStrategy(self.currentOpponentId || "");
+				DPISpec.logEvent(42, { choice: B === PD.COOPERATE ? "C" : "T", agent_latency_ms: Math.round(latencyMs) });
+			}
+			self._doRoundWithMoves(yourMove, B);
+		}, latencyMs);
+	}
+
 	listen(self, "iterated/cooperate", function(){
+		if (window.DPISpec) {
+			var onset = DPISpec.getDecisionOnsetTime();
+			var tNow = (DPISpec.highResNow) ? DPISpec.highResNow() : Date.now();
+			DPISpec.logEvent(41, { choice: "C", rt_ms: (onset != null && !isNaN(onset)) ? Math.round(tNow - onset) : "" });
+		}
 		publish("iterated/round/start");
-		self.playOneRound(PD.COOPERATE);
+		runAfterLatency(PD.COOPERATE, function(){ return self.opponentLogic.play(); });
 	});
 
 	listen(self, "iterated/cheat", function(){
+		if (window.DPISpec) {
+			var onset = DPISpec.getDecisionOnsetTime();
+			var tNow = (DPISpec.highResNow) ? DPISpec.highResNow() : Date.now();
+			DPISpec.logEvent(41, { choice: "T", rt_ms: (onset != null && !isNaN(onset)) ? Math.round(tNow - onset) : "" });
+		}
 		publish("iterated/round/start");
-		self.playOneRound(PD.CHEAT);
+		runAfterLatency(PD.CHEAT, function(){ return self.opponentLogic.play(); });
 	});
 
 	listen(self, "iterated/TRIP", function(){
@@ -238,10 +515,13 @@ function Iterated(config){
 	// Add...
 	self.add = function(){
 		_add(self);
+		mountDomPeepsOverlay();
+		self._syncDomPeepsToIteratedRect();
 	};
 
 	// Remove...
 	self.remove = function(){
+		tearDownDomPeepsOverlay();
 		app.destroy();
 		unlisten(self);
 		self.playerA.kill();
@@ -278,13 +558,17 @@ function IteratedScoreboard(config){
 		self.showScore();
 	};
 	self.addScore = function(a,b){
-		self.score[0] += a;
-		self.score[1] += b;
+		var na = (typeof a === 'number' && !isNaN(a)) ? a : 0;
+		var nb = (typeof b === 'number' && !isNaN(b)) ? b : 0;
+		self.score[0] = (typeof self.score[0] === 'number' && !isNaN(self.score[0]) ? self.score[0] : 0) + na;
+		self.score[1] = (typeof self.score[1] === 'number' && !isNaN(self.score[1]) ? self.score[1] : 0) + nb;
 		self.showScore();
 	};
 	self.showScore = function(){
-		left.innerHTML = self.score[0];
-		right.innerHTML = self.score[1];
+		var s0 = (typeof self.score[0] === 'number' && !isNaN(self.score[0])) ? self.score[0] : 0;
+		var s1 = (typeof self.score[1] === 'number' && !isNaN(self.score[1])) ? self.score[1] : 0;
+		left.innerHTML = s0;
+		right.innerHTML = s1;
 	};
 	self.reset();
 
@@ -319,13 +603,18 @@ function IteratedPeep(config){
 		self.payoffCoins.push(c);
 	}
 
-	// Body
-	self.body = _makeMovieClip("iterated_peep", {scale:0.5, anchorX:0.5, anchorY:0.95});
+	// Mismo raster que los <img> DOM (iterated_peep_idle.png): ojos quitados en build; sin trazo extra encima (evita “tumor”/doble curva).
+	if (!config.idlePeepUrl) throw new Error("IteratedPeep requiere config.idlePeepUrl");
+	var _bodyTex = PIXI.Texture.fromImage(config.idlePeepUrl);
+	self.body = new PIXI.Sprite(_bodyTex);
+	self.body.anchor.set(0.5, 0.95);
+	self.body.gotoAndStop = function(){};
 	self.animated.addChild(self.body);
 
-	// Hat
+	// Hat — oculto según diseño DPI (personajes sin sombrero)
 	self.hat = _makeMovieClip("iterated_peep", {scale:0.5, anchorX:0.5, anchorY:0.95});
 	self.animated.addChild(self.hat);
+	self.hat.visible = false;
 	self.hat.gotoAndStop(12);
 	self.chooseHat = function(id){
 		console.log('🎩 IteratedPeep.chooseHat llamado con id:', id);
@@ -356,30 +645,81 @@ function IteratedPeep(config){
 		}
 	};
 
-	// Face
+	// Capa “face” desactivada: en este atlas cada frame es el mono completo; duplicar encima del body rompía la cabeza.
 	self.face = _makeMovieClip("iterated_peep", {scale:0.5, anchorX:0.5, anchorY:0.95});
 	self.animated.addChild(self.face);
-	self.face.gotoAndStop(1);
+	self.face.gotoAndStop(0);
+	self.face.visible = false;
 	self.restingFace = true;
 
-	// Eyebrows
+	// Línea decorativa sobre la cabeza (desactivada: chocaba visualmente con el contorno del mono)
+	self.headLine = new PIXI.Graphics();
+	self.headLine.visible = false;
+	self.animated.addChild(self.headLine);
+
+	// Eyebrows — ocultos (sin expresiones)
 	self.eyebrows = _makeMovieClip("iterated_peep", {scale:0.5, anchorX:0.5, anchorY:0.95});
 	self.eyebrows.visible = false;
 	self.animated.addChild(self.eyebrows);
 
-	// RESET FACE
+	// Cartel: hijo de animated para heredar scale.x del oponente; más arriba y al costado para no tapar la cabeza.
+	// Verde brillante = Cooperar, rojo brillante = Traicionar
+	self.choiceSign = new PIXI.Graphics();
+	self.animated.addChild(self.choiceSign);
+	self.choiceSign.visible = false;
+	self._choiceSignTimeout = null;
+	self.showChoiceSign = function(move){
+		if (!self.choiceSign || !PD) return;
+		try {
+			if (self._choiceSignTimeout) clearTimeout(self._choiceSignTimeout);
+			self.choiceSign.clear();
+			self.choiceSign.visible = true;
+			var isGreen = (move === PD.COOPERATE);
+			// Más alto y lateral (cx) que antes: el disco ya no cubría el arco superior de la cabeza (solo quedaba la U inferior).
+			var radius = 20, ring = 4;
+			var cy = -132, handY = -52;
+			var cx = 66, handX = 44;
+			var stickTop = cy + radius;
+			// Palito: más grueso y recto (alineado con el centro del círculo)
+			self.choiceSign.lineStyle(7, 0x333333, 1);
+			self.choiceSign.moveTo(handX, handY);
+			self.choiceSign.lineTo(cx, stickTop);
+			self.choiceSign.lineStyle(0);
+			// Fondo negro (círculo negro detrás, estilo imagen referencia)
+			self.choiceSign.beginFill(0x000000);
+			if (typeof self.choiceSign.drawCircle === "function") {
+				self.choiceSign.drawCircle(cx, cy, radius + ring);
+			}
+			self.choiceSign.endFill();
+			// Círculo de color brillante (verde brillante / rojo brillante)
+			var fillColor = isGreen ? 0x00FF00 : 0xFF0000;
+			self.choiceSign.beginFill(fillColor);
+			if (typeof self.choiceSign.drawCircle === "function") {
+				self.choiceSign.drawCircle(cx, cy, radius);
+			} else {
+				self.choiceSign.drawRect(cx - radius, cy - radius, radius * 2, radius * 2);
+			}
+			self.choiceSign.endFill();
+			self._choiceSignTimeout = setTimeout(function(){
+				self.choiceSign.visible = false;
+				self._choiceSignTimeout = null;
+			}, 2200);
+		} catch (err) {
+			console.warn("Cartel:", err);
+		}
+	};
+
 	self.resetFace = function(){
 		self.eyebrows.visible = false;
-		self.face.gotoAndStop(1);
+		self.body.gotoAndStop(0);
 		self.restingFace = true;
 	};
 
-	// Position & Flip?
+	// Posición: volcar el oponente en self.animated (no en el contenedor raíz) evita bounds/rareos con scale.x<0 en PIXI v4.
 	g.y = 236;
-	//g.rotation = 1;
 	if(config.opponent){
 		g.x = 700-62;
-		g.scale.x *= -1;
+		self.animated.scale.x = -1;
 	}else{
 		g.x = 62;
 	}
@@ -395,18 +735,8 @@ function IteratedPeep(config){
 	var _faceTimer = 0;
 	self.update = function(delta){
 
-		// Blinking
-		if(self.restingFace){
-			if(self.face.currentFrame>2) self.face.gotoAndStop(1);
-			if(self.face.currentFrame==2 && Math.random()<0.20) self.face.gotoAndStop(1);
-			if(self.face.currentFrame==1 && Math.random()<0.01) self.face.gotoAndStop(2);
-		}
-
-		// Face Tripped
-		if(_faceTripped){
-			_faceTimer += 0.25;
-			var frame = 18+(Math.floor(_faceTimer)%5);
-			self.face.gotoAndStop(frame);
+		if(self.restingFace || _faceTripped){
+			self.body.gotoAndStop(0);
 		}
 
 		// Hopping
@@ -446,17 +776,12 @@ function IteratedPeep(config){
 			.to({x:60, y:-75}, _s(0.1), Ease.circOut)
 			.wait(_s(0.2))
 			.call(function(){
-				if(self.TRIP){
-					_animate2_alt();
-				}else{
-					_animate2();
-				}
+				_animate2(); // Sin tropezón ni movimientos de reacción
 			});
 	};
 
-	// Walk towards machine
+	// Walk towards machine (sin rebote)
 	var _animate2 = function(){
-		_isHopping = true;
 		Tween_get(self.animated)
 			.to({x:70}, _s(0.5), Ease.linear)
 			.call(_animate3);
@@ -474,8 +799,7 @@ function IteratedPeep(config){
 			.to({rotation:Math.TAU/4.9, y:-11}, _s(0.05), Ease.quadIn)
 			.call(function(){
 
-				Loader.sounds.thump.stereo(-0.9).volume(0.9).play();
-				Loader.sounds.squeak.stereo(-0.9).volume(0.9).play();
+				if (!window.DPI_LOW_STIMULUS) { Loader.sounds.thump.stereo(-0.9).volume(0.9).play(); Loader.sounds.squeak.stereo(-0.9).volume(0.9).play(); }
 
 				self.eyebrows.visible = false;
 				_faceTripped = true;
@@ -502,17 +826,16 @@ function IteratedPeep(config){
 
 					self.restingFace = false;
 					self.eyebrows.visible = false;
-					if(self.payoff==PD.PAYOFFS.R) self.face.gotoAndStop(8); // Reward Face!
-					if(self.payoff==PD.PAYOFFS.S) self.face.gotoAndStop(9); // Sucker Face!
+					self.body.gotoAndStop(0);
 					self.coin.visible = false;
 
 					// SOUND
 					if(config.opponent){
 						setTimeout(function(){
-							Loader.sounds.coin_insert.stereo(0.9).volume(0.3).play();
+							if (!window.DPI_LOW_STIMULUS) Loader.sounds.coin_insert.stereo(0.9).volume(0.3).play();
 						},50);
 					}else{
-						Loader.sounds.coin_insert.stereo(-0.9).volume(0.3).play();
+						if (!window.DPI_LOW_STIMULUS) Loader.sounds.coin_insert.stereo(-0.9).volume(0.3).play();
 					}
 
 				});
@@ -527,29 +850,18 @@ function IteratedPeep(config){
 
 					self.restingFace = false;
 					self.eyebrows.visible = false;
-					if(self.payoff==PD.PAYOFFS.P) self.face.gotoAndStop(7); // Punishment Face
-					if(self.payoff==PD.PAYOFFS.T) self.face.gotoAndStop(10); // Temptation Face!
+					self.body.gotoAndStop(0);
 
 					// WHOOSH SOUND
 					if(config.opponent){
 						setTimeout(function(){
-							Loader.sounds.whoosh.stereo(0.9).volume(0.8).play();
+							if (!window.DPI_LOW_STIMULUS) Loader.sounds.whoosh.stereo(0.9).volume(0.8).play();
 						},50);
 					}else{
 						Loader.sounds.whoosh.stereo(-0.9).volume(0.8).play();
 					}
 
-					// EVIL LAUGH
-					if(self.payoff==PD.PAYOFFS.T){
-						setTimeout(function(){
-							var stereo = (config.opponent) ? 0.9 : -0.9;
-							Loader.sounds.evil_laugh.stereo(stereo).volume(1).play();
-						},100);
-					}
-
-					if(self.payoff==PD.PAYOFFS.T){
-						_isHopping = true;
-					}
+					// Sin risa de burla ni movimiento de burla (T)
 
 				})
 				.to({x:50, y:-100}, _s(0.1), Ease.circOut);
@@ -569,9 +881,8 @@ function IteratedPeep(config){
 			.call(_animate4_alt);
 	};
 
-	// Walk back
+	// Walk back (sin rebote)
 	var _animate4 = function(){
-		_isHopping = true;
 		Tween_get(self.animated)
 			.to({x:0}, _s(0.5), Ease.linear)
 			.call(_animate5);
@@ -597,14 +908,8 @@ function IteratedPeep(config){
 			self.restingFace = true;
 		}
 
-		// Eyebrows, yo
-		if(!self.TRIP){
-			self.eyebrows.visible = true;
-			if(self.payoff==PD.PAYOFFS.P) self.eyebrows.gotoAndStop(3); // Punishment
-			if(self.payoff==PD.PAYOFFS.R) self.eyebrows.gotoAndStop(4); // Reward
-			if(self.payoff==PD.PAYOFFS.S) self.eyebrows.gotoAndStop(5); // Sucker
-			if(self.payoff==PD.PAYOFFS.T) self.eyebrows.gotoAndStop(6); // Temptation
-		}
+		// Sin expresiones: cejas siempre ocultas (no reacciones al ganar/perder)
+		self.eyebrows.visible = false;
 
 		// Put coin away if not already
 		if(self.coin.visible){
@@ -633,10 +938,10 @@ function IteratedPeep(config){
 							if(self.payoff==PD.PAYOFFS.R && i==2) return; // NOT last coin.
 							if(config.opponent){
 								setTimeout(function(){
-									Loader.sounds.coin_get.stereo(0.9).volume(0.1).play();
+									if (!window.DPI_LOW_STIMULUS) Loader.sounds.coin_get.stereo(0.9).volume(0.1).play();
 								},50);
 							}else{
-								Loader.sounds.coin_get.stereo(-0.9).volume(0.1).play();
+								if (!window.DPI_LOW_STIMULUS) Loader.sounds.coin_get.stereo(-0.9).volume(0.1).play();
 							}
 
 						})
@@ -668,7 +973,7 @@ function IteratedPeep(config){
 	var _animateDone = function(){
 		if(self.TRIP){
 			self.restingFace = true;
-			self.face.gotoAndStop(2); // BLINK
+			self.body.gotoAndStop(0);
 		}
 		_faceTripped = false;
 		self.animationDeferred.resolve();

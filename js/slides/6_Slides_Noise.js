@@ -17,11 +17,11 @@ SLIDES.push({
 		// Words on top & bottom
 		self.add({
 			id:"topWords", type:"TextBox", text_id:"noise_1",
-			x:130, y:35, width:700, height:100, align:"center"
+			x:130, y:35, width:700, height:98, align:"center"
 		});
 		self.add({
 			id:"btmWords", type:"TextBox", text_id:"noise_1_end",
-			x:130, y:410, width:700, height:100, align:"center"
+			x:130, y:410, width:700, height:98, align:"center"
 		});
 
 		// STAGES

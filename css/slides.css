@@ -4,6 +4,11 @@
 	src: url('FuturaHandwritten.ttf') format('truetype');
 }
 
+html{
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
 html,body{
 	width: 100%;
 	height: 100%;
@@ -12,7 +17,8 @@ html,body{
 body{
 
 	margin:0;
-	overflow: hidden;
+	/* overflow:hidden aquí recortaba overlays position:fixed de los monitos (hijos de body). El scroll lo contiene #main si hace falta. */
+	overflow: visible;
 
 	background: #fff;
 
@@ -37,6 +43,7 @@ body{
 	width: 100%;
 	height: calc(100% - 60px);
 	position: relative;
+	/* Contiene el juego; hidden evita scroll doble sin recortar overlays en body */
 	overflow: hidden;
 }
 #footer{
@@ -117,6 +124,7 @@ s{
 	height:40px;
 	top:10px;
 	right:13px;
+	display: none; /* oculto para proyecto DPI */
 }
 .sharing img{
 	width: 40px;
@@ -132,6 +140,7 @@ s{
 	position:absolute;
 	margin:auto;
 	top:0; left:0; right:0; bottom:0;
+	overflow: visible;
 }
 #slideshow{
 
@@ -143,6 +152,7 @@ s{
 	position: absolute;
 	left:-480px;
 	top:-270px;
+	overflow: visible;
 
 }
 .object{
@@ -168,6 +178,89 @@ s{
 
 .label{
 	position: absolute;
+}
+/* Matriz DPI centrada: las etiquetas deben quedar por encima del bloque de la matriz */
+.iterated-container{
+	overflow: visible;
+	min-height: 250px;
+}
+.payoffs-matrix-replacement .pm-edge-label{
+	position: absolute;
+	z-index: 14;
+	width: 78px;
+	font-size: 13px;
+	line-height: 1.15;
+	text-align: center;
+	color: #f2f2f2;
+	text-shadow: 0 1px 2px rgba(0,0,0,0.85), 0 0 8px rgba(0,0,0,0.4);
+	transform-origin: center center;
+	pointer-events: none;
+	font-family: 'FuturaHandwritten', Arial, sans-serif;
+}
+/* Evita que reglas globales o el escalado HiDPI encojan el lienzo a una franja (monitos “cortados”). */
+.iterated-container > canvas{
+	width: 700px !important;
+	height: 250px !important;
+	max-width: none !important;
+	max-height: none !important;
+	display: block;
+	box-sizing: border-box;
+	object-fit: none;
+}
+/* Monitos: contenedor 151×201; PNG idle (iterated_peep_idle.png). Sin translateX(-50%): evita recortes con overflow. */
+.iterated-peep-dom{
+	position: absolute;
+	bottom: 14px;
+	width: 151px;
+	height: 201px;
+	min-height: 201px;
+	display: block;
+	box-sizing: border-box;
+	/* hidden recortaba el trazo superior de la cabeza (antialias / subpíxeles). */
+	overflow: visible;
+	pointer-events: none;
+	z-index: 30;
+	visibility: visible;
+	opacity: 1;
+}
+.iterated-peep-dom .iterated-peep-flip{
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	transform: scaleX(-1);
+	transform-origin: center center;
+}
+.iterated-peep-dom .iterated-peep-idle-img{
+	display: block;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	max-height: none;
+	/* fill estiraba; contain preserva el trazo del PNG (mismas proporciones 151×201). */
+	object-fit: contain;
+	object-position: center bottom;
+	vertical-align: top;
+	pointer-events: none;
+	-webkit-user-drag: none;
+	user-select: none;
+}
+/* Centrado en x=62 y x=638 sin translateX(-50%) */
+.iterated-peep-dom--left{
+	left: 62px;
+	margin-left: -75.5px;
+}
+.iterated-peep-dom--right{
+	left: 638px;
+	margin-left: -75.5px;
+}
+/* Montados en document.body con position:fixed (Iterated.js); no usar left/bottom de la fila de arriba */
+.iterated-peep-dom.iterated-peep-dom--overlay{
+	left: auto;
+	bottom: auto;
+	margin: 0;
+	position: fixed;
+	z-index: 10050;
+	pointer-events: none;
 }
 
 /********* Button ********/
@@ -420,6 +513,62 @@ s{
 }
 
 /*************************/
+/******* MATRIZ DPI (puntajes 3, 5, 0, 1) — reemplazo, con brillo y orden *******/
+/*************************/
+.payoffs-matrix-replacement{
+	position: absolute;
+	left: 225px;
+	top: 0;
+	width: 250px;
+	height: 250px;
+	max-width: 250px;
+	max-height: 250px;
+	box-sizing: border-box;
+	pointer-events: none;
+	z-index: 8;
+	background: transparent;
+	border-radius: 4px;
+	overflow: visible;
+}
+.payoffs-matrix-replacement .pm-diamond{
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	filter: brightness(1.05);
+}
+.payoffs-matrix-replacement .pm-diamond .pm-outline,
+.payoffs-matrix-replacement .pm-diamond line{
+	stroke: #7a7a7a;
+}
+.payoffs-matrix-replacement .pm-region{
+	transition: fill 0.15s ease;
+}
+.payoffs-matrix-replacement .pm-region.highlight{
+	fill: #5a5a35;
+}
+.payoffs-matrix-replacement .pm-num{
+	position: absolute;
+	width: 24px;
+	min-width: 24px;
+	height: 24px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	line-height: 1;
+	box-sizing: border-box;
+	background: transparent;
+	font-family: 'FuturaHandwritten', Arial, sans-serif;
+	font-size: 18px;
+	font-weight: bold;
+	color: #fff;
+	text-shadow: 0 0 10px rgba(255,255,255,0.4), 0 1px 2px rgba(0,0,0,0.8);
+}
+
+/*************************/
 /******* CHARACTERS *******/
 /*************************/
 
@@ -541,4 +690,439 @@ s{
 }
 .credits a:hover{
 	color:#ee5151;
+}
+
+/*************************/
+/***** Selector rol ******/
+/*************************/
+
+#role-picker-overlay{
+	position: fixed;
+	inset: 0;
+	z-index: 2147483000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(255,255,255,0.97);
+	font-family: Arial, Helvetica, sans-serif;
+	padding: 16px;
+	box-sizing: border-box;
+}
+.role-picker-card{
+	max-width: 420px;
+	width: 100%;
+	background: #fff;
+	border: 2px solid #333;
+	border-radius: 12px;
+	padding: 24px 22px 18px;
+	box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+	text-align: center;
+}
+.role-picker-title{
+	margin: 0 0 8px;
+	font-size: 22px;
+	font-weight: 700;
+	color: #222;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.role-picker-hint{
+	margin: 0 0 20px;
+	font-size: 14px;
+	color: #555;
+	line-height: 1.4;
+}
+.role-picker-buttons{
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	justify-content: center;
+	margin-bottom: 16px;
+}
+.role-picker-btn{
+	min-width: 160px;
+	padding: 14px 20px;
+	font-size: 16px;
+	font-weight: 600;
+	border-radius: 8px;
+	border: 2px solid #333;
+	cursor: pointer;
+	font-family: Arial, Helvetica, sans-serif;
+	transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.role-picker-btn:hover{
+	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+.role-picker-btn--player{
+	background: #4089DD;
+	color: #fff;
+	border-color: #2a6cb5;
+}
+.role-picker-btn--admin{
+	background: #2E7D32;
+	color: #fff;
+	border-color: #1b5e20;
+}
+.role-picker-foot{
+	margin: 0;
+	font-size: 11px;
+	color: #777;
+	line-height: 1.45;
+}
+
+#participant-auth-overlay{
+	position: fixed;
+	inset: 0;
+	z-index: 2147483001;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(255,255,255,0.98);
+	font-family: Arial, Helvetica, sans-serif;
+	padding: 16px;
+	box-sizing: border-box;
+}
+.participant-auth-card{
+	max-width: 400px;
+	width: 100%;
+	background: #fff;
+	border: 2px solid #333;
+	border-radius: 12px;
+	padding: 22px 20px 16px;
+	box-shadow: 0 8px 28px rgba(0,0,0,0.1);
+}
+.participant-auth-title{
+	margin: 0 0 8px;
+	font-size: 20px;
+	font-weight: 700;
+	color: #222;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.participant-auth-hint{
+	margin: 0 0 14px;
+	font-size: 13px;
+	color: #555;
+	line-height: 1.4;
+}
+.participant-auth-modehint{
+	margin: 0 0 12px;
+	font-size: 12px;
+	color: #444;
+	line-height: 1.45;
+	text-align: left;
+	background: #f5f5f5;
+	padding: 10px 12px;
+	border-radius: 8px;
+	border: 1px solid #ddd;
+}
+.participant-auth-modehint code{
+	font-size: 11px;
+	word-break: break-all;
+}
+.participant-auth-skip{
+	display: block;
+	width: 100%;
+	margin-top: 12px;
+	padding: 10px;
+	font-size: 13px;
+	background: transparent;
+	color: #666;
+	border: 1px dashed #999;
+	border-radius: 8px;
+	cursor: pointer;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.participant-auth-skip:hover{
+	background: #fafafa;
+	color: #333;
+}
+
+/* Barra modo jugador / admin (footer) */
+.trust-role-bar{
+	position: fixed;
+	bottom: 36px;
+	right: 8px;
+	z-index: 1003;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	max-width: min(420px, 96vw);
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 11px;
+	color: #333;
+	background: rgba(255,255,255,0.95);
+	border: 1px solid #bbb;
+	border-radius: 8px;
+	padding: 6px 8px;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+	pointer-events: auto;
+}
+.trust-role-label{
+	line-height: 1.3;
+}
+.trust-role-btn{
+	font-size: 11px;
+	padding: 5px 8px;
+	border-radius: 6px;
+	border: 1px solid #4089DD;
+	background: #4089DD;
+	color: #fff;
+	cursor: pointer;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.trust-role-btn--ghost{
+	background: #fff;
+	color: #333;
+	border-color: #999;
+}
+.trust-role-btn:hover{
+	filter: brightness(1.05);
+}
+.participant-auth-tabs{
+	display: flex;
+	gap: 8px;
+	margin-bottom: 14px;
+}
+.participant-auth-tab{
+	flex: 1;
+	padding: 8px;
+	font-size: 13px;
+	border: 1px solid #ccc;
+	background: #f5f5f5;
+	border-radius: 6px;
+	cursor: pointer;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.participant-auth-tab.is-on{
+	background: #4089DD;
+	color: #fff;
+	border-color: #2a6cb5;
+}
+.participant-auth-label{
+	display: block;
+	font-size: 12px;
+	color: #333;
+	margin-bottom: 10px;
+	text-align: left;
+}
+.participant-auth-input{
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin-top: 4px;
+	padding: 8px 10px;
+	font-size: 14px;
+	border: 1px solid #999;
+	border-radius: 6px;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.participant-auth-submit{
+	width: 100%;
+	margin-top: 8px;
+	padding: 12px;
+	font-size: 15px;
+	font-weight: 600;
+	background: #4089DD;
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.participant-auth-err{
+	min-height: 18px;
+	font-size: 12px;
+	color: #c62828;
+	margin: 10px 0 0;
+}
+
+/* Acceso inicial (TrustStartupGate) — mismo tono que participant-auth */
+#trust-startup-overlay{
+	position: fixed;
+	inset: 0;
+	z-index: 2147483001;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(255,255,255,0.98);
+	font-family: Arial, Helvetica, sans-serif;
+	padding: 16px;
+	box-sizing: border-box;
+}
+.trust-startup-card{
+	max-width: 420px;
+	width: 100%;
+	background: #fff;
+	border: 2px solid #333;
+	border-radius: 12px;
+	padding: 22px 20px 16px;
+	box-shadow: 0 8px 28px rgba(0,0,0,0.1);
+}
+.trust-startup-title{
+	margin: 0 0 8px;
+	font-size: 20px;
+	font-weight: 700;
+	color: #222;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.trust-startup-lead{
+	margin: 0 0 14px;
+	font-size: 13px;
+	color: #555;
+	line-height: 1.45;
+}
+.trust-startup-tabs{
+	display: flex;
+	gap: 8px;
+	margin-bottom: 14px;
+}
+.trust-startup-tab{
+	flex: 1;
+	padding: 8px;
+	font-size: 13px;
+	border: 1px solid #ccc;
+	background: #f5f5f5;
+	border-radius: 6px;
+	cursor: pointer;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.trust-startup-tab.is-on{
+	background: #4089DD;
+	color: #fff;
+	border-color: #2a6cb5;
+}
+.trust-startup-label{
+	display: block;
+	font-size: 12px;
+	color: #333;
+	margin-bottom: 10px;
+	text-align: left;
+}
+.trust-startup-input{
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin-top: 4px;
+	padding: 8px 10px;
+	font-size: 14px;
+	border: 1px solid #999;
+	border-radius: 6px;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.trust-startup-submit{
+	width: 100%;
+	margin-top: 8px;
+	padding: 12px;
+	font-size: 15px;
+	font-weight: 600;
+	background: #4089DD;
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.trust-startup-err{
+	min-height: 18px;
+	font-size: 12px;
+	color: #c62828;
+	margin: 10px 0 0;
+}
+.trust-startup-hintfoot{
+	margin: 14px 0 0;
+	font-size: 11px;
+	color: #666;
+	line-height: 1.4;
+}
+.trust-startup-hintfoot code{
+	font-size: 11px;
+	background: #f0f0f0;
+	padding: 2px 5px;
+	border-radius: 4px;
+}
+
+/* Panel dedicado admin.html */
+.admin-dash-header{
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 1005;
+	background: #1b5e20;
+	color: #fff;
+	padding: 10px 14px 12px;
+	font-family: Arial, Helvetica, sans-serif;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.admin-dash-row1{
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+.admin-dash-brand{
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-width: min(440px, 100%);
+}
+.admin-dash-brand strong{
+	font-size: 15px;
+}
+.admin-dash-sub{
+	font-size: 11px;
+	opacity: 0.92;
+	line-height: 1.35;
+	font-weight: normal;
+	color: #e8f5e9;
+}
+.admin-dash-actions{
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	justify-content: flex-end;
+}
+.admin-dash-btn{
+	padding: 8px 12px;
+	cursor: pointer;
+	font-size: 12px;
+	border-radius: 6px;
+	border: none;
+	font-family: Arial, Helvetica, sans-serif;
+}
+.admin-dash-btn--primary{
+	background: #fff;
+	color: #1b5e20;
+	font-weight: bold;
+}
+.admin-dash-btn--ghost{
+	background: transparent;
+	color: #fff;
+	border: 1px solid rgba(255,255,255,0.85);
+}
+.admin-dash-link{
+	color: #c8e6c9;
+	font-size: 12px;
+	text-decoration: underline;
+}
+.admin-dash-note{
+	margin: 10px 0 0;
+	padding: 0;
+	font-size: 10px;
+	line-height: 1.45;
+	color: #c8e6c9;
+	border-top: 1px solid rgba(255,255,255,0.2);
+	padding-top: 8px;
+}
+body.trust-admin-page #dpi-operator-hud{
+	top: auto;
+	bottom: 12px;
+	right: 12px;
+}
+body.trust-admin-page{
+	min-height: 100vh;
+	background: #eceff1;
 }

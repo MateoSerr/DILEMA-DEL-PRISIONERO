@@ -74,16 +74,9 @@ var GameSaveManager = {
             return;
         }
         
-        var ROUNDS = [
-            {id:"tft", num:5, name:"Copycat"},
-            {id:"all_d", num:4, name:"Always Cheat"},
-            {id:"all_c", num:4, name:"Always Cooperate"},
-            {id:"grudge", num:5, name:"Grudger"},
-            {id:"prober", num:7, name:"Detective"}
-        ];
-        
-        var opponentName = ROUNDS[data.roundIndex] ? ROUNDS[data.roundIndex].name : 'Oponente ' + (data.roundIndex + 1);
-        var maxRounds = ROUNDS[data.roundIndex] ? ROUNDS[data.roundIndex].num : 5;
+        var ROUNDS_SAVE = (typeof ROUNDS !== 'undefined' && ROUNDS.length) ? ROUNDS : [{id:"tft", num:240, name:"Copycat"}];
+        var opponentName = ROUNDS_SAVE[data.roundIndex] ? (ROUNDS_SAVE[data.roundIndex].name || ('Oponente ' + (data.roundIndex + 1))) : 'Oponente ' + (data.roundIndex + 1);
+        var maxRounds = ROUNDS_SAVE[data.roundIndex] ? ROUNDS_SAVE[data.roundIndex].num : 240;
         
         var dialog = document.createElement('div');
         dialog.id = 'continue-dialog';
@@ -132,6 +125,8 @@ var GameSaveManager = {
         this.isGameActive = false;
         try {
             localStorage.removeItem('trustGameSave');
+            if (window.DPISpec && DPISpec.clearEventLogStorage) DPISpec.clearEventLogStorage();
+            if (window.DPISpec && DPISpec.clearEventLog) DPISpec.clearEventLog();
             console.log('📦 localStorage eliminado');
         } catch(e) {
             console.error('📦 Error eliminando:', e);

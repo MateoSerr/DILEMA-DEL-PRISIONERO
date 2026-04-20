@@ -49,12 +49,16 @@ var StatsManager = {
             this.data.sessionStart = this.getLocalDateTime();
             this.data.lastUpdate = this.getLocalDateTime();
             this.loadStats(); // Cargar estadísticas guardadas si existen
-            this.createUI();
+            // Jugador: sin panel en index; admin o página dedicada admin.html: siempre crear UI.
+            var adminDedicated = window.__TRUST_ADMIN_PAGE__ === true;
+            if (!window.AppRole || AppRole.isAdmin() || adminDedicated) {
+                this.createUI();
+            }
             this.startListening();
             
             // CRÍTICO: Actualizar el display después de cargar las estadísticas
             // Esto asegura que la tabla muestre los datos correctos al refrescar
-            this.updateDisplay();
+            if (this.content) this.updateDisplay();
             
             // Asegurar que el temporizador NO esté iniciado al comenzar
             this.decisionStartTime = null;
@@ -94,11 +98,63 @@ var StatsManager = {
         }
     },
     
+    _escHtml: function(s) {
+        if (s == null || s === undefined) return "";
+        return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    },
+
+    /** Vista tipo hoja: eventos DPI en filas (mismos datos que el CSV). */
+    refreshDpiEventTable: function() {
+        if (!this.dpiTableScroll || !window.DPISpec || typeof DPISpec.getEventLog !== "function") return;
+        var rows = DPISpec.getEventLog();
+        var esc = this._escHtml.bind(this);
+        if (!rows.length) {
+            this.dpiTableScroll.innerHTML = '<div style="font-size:9px;color:#888;padding:6px;">Sin eventos en el log todavía.</div>';
+            return;
+        }
+        var h = '<table style="width:100%;border-collapse:collapse;font-size:8px;line-height:1.2;">';
+        h += "<thead><tr style=\"background:#e3e3e3;\">";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;text-align:left;\">t (ms)</th>";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;\">cód</th>";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;text-align:left;\">evento</th>";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;\">bloq</th>";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;\">ens</th>";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;\">elec</th>";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;\">RT</th>";
+        h += "<th style=\"border:1px solid #bbb;padding:2px 3px;\">PH/PA</th>";
+        h += "</tr></thead><tbody>";
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            var ph = r.payoff_human;
+            var pa = r.payoff_agent;
+            var pts = (ph !== "" && ph != null) || (pa !== "" && pa != null) ? esc(ph) + "/" + esc(pa) : "";
+            h += "<tr>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;\">" + esc(r.timestamp_ms) + "</td>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;text-align:center;\">" + esc(r.event_code) + "</td>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;\">" + esc(r.event_label) + "</td>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;text-align:center;\">" + esc(r.block_num) + "</td>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;text-align:center;\">" + esc(r.trial_num) + "</td>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;text-align:center;\">" + esc(r.choice) + "</td>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;text-align:center;\">" + esc(r.rt_ms) + "</td>";
+            h += "<td style=\"border:1px solid #eee;padding:1px 3px;text-align:center;\">" + pts + "</td>";
+            h += "</tr>";
+        }
+        h += "</tbody></table>";
+        this.dpiTableScroll.innerHTML = h;
+    },
+
     // Crear la interfaz de estadísticas
     createUI: function() {
+        if (this._statsUiCreated) return;
+        this._statsUiCreated = true;
+
         // Crear botón de mostrar/ocultar PRIMERO
         this.toggleBtn = document.createElement("button");
-        this.toggleBtn.innerHTML = "📊 Stats";
+        this.toggleBtn.innerHTML = "📊 Estadísticas";
         this.toggleBtn.style.cssText = `
             position: fixed;
             top: 10px;
@@ -122,7 +178,7 @@ var StatsManager = {
             position: fixed;
             top: 50px;
             left: 50px;
-            width: 200px;
+            width: min(420px, 92vw);
             max-height: 80vh;
             overflow-y: auto;
             background: rgba(255, 255, 255, 0.95);
@@ -140,7 +196,10 @@ var StatsManager = {
         this.header = document.createElement("div");
         this.header.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <strong style="color: #333;">📊 Estadísticas</strong>
+                <div>
+                    <strong style="color: #333;">📊 Estadísticas</strong>
+                    <div style="font-size:9px;color:#2E7D32;font-weight:bold;margin-top:2px;">Modo administrador</div>
+                </div>
                 <button id="toggle-stats" style="background: #666; color: white; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer; font-size: 10px;">−</button>
             </div>
         `;
@@ -148,6 +207,16 @@ var StatsManager = {
         // Crear contenido de estadísticas
         this.content = document.createElement("div");
         this.content.id = "stats-content";
+
+        this.dpiSection = document.createElement("div");
+        this.dpiSection.style.cssText = "margin-top:8px;border-top:1px solid #ccc;padding-top:6px;";
+        var dpiTitle = document.createElement("div");
+        dpiTitle.style.cssText = "font-weight:bold;font-size:10px;color:#333;margin-bottom:4px;";
+        dpiTitle.textContent = "Registro DPI (vista tabla, estilo hoja)";
+        this.dpiTableScroll = document.createElement("div");
+        this.dpiTableScroll.style.cssText = "max-height:220px;overflow:auto;border:1px solid #ddd;border-radius:4px;background:#fafafa;";
+        this.dpiSection.appendChild(dpiTitle);
+        this.dpiSection.appendChild(this.dpiTableScroll);
         
         // Crear botón de descarga
         this.downloadBtn = document.createElement("button");
@@ -163,6 +232,94 @@ var StatsManager = {
             font-size: 11px;
             margin-top: 8px;
         `;
+        
+        // Crear botón Descargar CSV (especificación DPI)
+        this.csvBtn = document.createElement("button");
+        this.csvBtn.innerHTML = "📄 Descargar CSV (DPI)";
+        this.csvBtn.style.cssText = `
+            width: 100%;
+            background: #2E7D32;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 4px;
+        `;
+        this.csvBtn.onclick = () => {
+            if (window.DPISpec && typeof DPISpec.downloadCSV === 'function') {
+                DPISpec.downloadCSV();
+            } else {
+                alert('El módulo DPI no está cargado.');
+            }
+        };
+        
+        this.validateCsvBtn = document.createElement("button");
+        this.validateCsvBtn.innerHTML = "✓ Validar log en memoria (DPI)";
+        this.validateCsvBtn.style.cssText = `
+            width: 100%;
+            background: #5C6BC0;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 4px;
+        `;
+        this.validateCsvBtn.onclick = () => {
+            if (window.DPISpec && typeof DPISpec.validateEventLog === 'function') {
+                var r = DPISpec.validateEventLog();
+                if (r.valid) alert('Log en memoria válido: secuencia y eventos correctos.');
+                else alert('Errores (log en memoria):\n' + (r.errors && r.errors.length ? r.errors.join('\n') : 'desconocido'));
+            } else {
+                alert('El módulo DPI no está cargado.');
+            }
+        };
+
+        this.validateCsvFileInput = document.createElement("input");
+        this.validateCsvFileInput.type = "file";
+        this.validateCsvFileInput.accept = ".csv,text/csv";
+        this.validateCsvFileInput.style.display = "none";
+        this.validateCsvFileInput.onchange = (ev) => {
+            var f = ev.target && ev.target.files && ev.target.files[0];
+            ev.target.value = "";
+            if (!f) return;
+            var reader = new FileReader();
+            reader.onload = () => {
+                if (!window.DPISpec || typeof DPISpec.validateCSVText !== 'function') {
+                    alert('El módulo DPI no está cargado.');
+                    return;
+                }
+                var r = DPISpec.validateCSVText(reader.result);
+                var msg = (r.valid ? 'Archivo CSV válido (' + (r.rowCount || 0) + ' filas).' : 'Errores en archivo CSV:\n' + (r.errors && r.errors.length ? r.errors.join('\n') : 'desconocido'));
+                alert(msg);
+            };
+            reader.onerror = () => alert('No se pudo leer el archivo.');
+            reader.readAsText(f, "UTF-8");
+        };
+
+        this.validateCsvFileBtn = document.createElement("button");
+        this.validateCsvFileBtn.innerHTML = "📂 Validar CSV desde archivo";
+        this.validateCsvFileBtn.style.cssText = `
+            width: 100%;
+            background: #3949AB;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 4px;
+        `;
+        this.validateCsvFileBtn.onclick = () => {
+            if (window.DPISpec && typeof DPISpec.validateCSVText === 'function') {
+                this.validateCsvFileInput.click();
+            } else {
+                alert('El módulo DPI no está cargado.');
+            }
+        };
         
         // Crear botón de limpiar
         this.clearBtn = document.createElement("button");
@@ -255,9 +412,18 @@ var StatsManager = {
         // Ensamblar todo
         this.container.appendChild(this.header);
         this.container.appendChild(this.content);
+        this.container.appendChild(this.dpiSection);
         this.container.appendChild(this.downloadBtn);
+        this.container.appendChild(this.csvBtn);
+        this.container.appendChild(this.validateCsvBtn);
+        this.container.appendChild(this.validateCsvFileBtn);
+        document.body.appendChild(this.validateCsvFileInput);
         this.container.appendChild(this.newGameBtn);
         this.container.appendChild(this.clearBtn);
+
+        if (window.AdminRemotePanel && typeof AdminRemotePanel.mount === "function") {
+            AdminRemotePanel.mount(this.container);
+        }
         
         document.body.appendChild(this.container);
         document.body.appendChild(this.toggleBtn);
@@ -270,11 +436,13 @@ var StatsManager = {
         
         // Forzar actualización del display
         this.updateDisplay();
+        this.refreshDpiEventTable();
         
         // Actualizar cada segundo para mostrar el tiempo en tiempo real
         setInterval(() => {
             if (this.content && this.container.style.display !== 'none') {
                 this.updateDisplay();
+                this.refreshDpiEventTable();
             }
         }, 1000);
     },
@@ -286,8 +454,108 @@ var StatsManager = {
             this.toggleBtn.innerHTML = '📊 Ocultar';
         } else {
             this.container.style.display = 'none';
-            this.toggleBtn.innerHTML = '📊 Stats';
+            this.toggleBtn.innerHTML = '📊 Estadísticas';
         }
+    },
+    
+    // Formatear tiempo en segundos para export: "X segundos" o "X.XX segundos"
+    _formatSegundosTexto: function(seg) {
+        if (seg === null || seg === undefined || isNaN(seg)) return '0 segundos';
+        const n = typeof seg === 'number' ? seg : parseFloat(seg);
+        const txt = (n % 1 === 0) ? String(Math.round(n)) : n.toFixed(2);
+        return txt + ' segundos';
+    },
+
+    // Obtener tiempos por ronda para exportar en JSON: Oponente 1, Oponente 2, ... con ronda 1, ronda 2, ... en segundos
+    getRoundTimesForExport: function() {
+        const out = {};
+        try {
+            const raw = localStorage.getItem('trustGameSave');
+            const save = raw ? JSON.parse(raw) : null;
+            const byOpp = (save && Array.isArray(save.roundTimesByOpponent)) ? save.roundTimesByOpponent : [];
+            const current = (save && Array.isArray(save.roundTimes)) ? save.roundTimes : [];
+            const tieneByOpp = byOpp.some(function(arr) { return arr && arr.length > 0; });
+
+            if (tieneByOpp) {
+                byOpp.forEach(function(times, idx) {
+                    const opKey = 'Oponente ' + (idx + 1);
+                    out[opKey] = {};
+                    (times || []).forEach(function(t, i) {
+                        const seg = typeof t === 'number' ? t : parseFloat(t);
+                        out[opKey]['ronda ' + (i + 1)] = this._formatSegundosTexto(isNaN(seg) ? t : seg);
+                    }.bind(this));
+                }.bind(this));
+                if (current.length > 0) {
+                    const n = byOpp.length + 1;
+                    out['Oponente ' + n + ' (en curso)'] = {};
+                    current.forEach(function(t, i) {
+                        const seg = typeof t === 'number' ? t : parseFloat(t);
+                        out['Oponente ' + n + ' (en curso)']['ronda ' + (i + 1)] = this._formatSegundosTexto(isNaN(seg) ? t : seg);
+                    }.bind(this));
+                }
+                return out;
+            }
+
+            // Si no hay roundTimesByOpponent, derivar Oponente 1, 2, 3... del historial de decisiones (bloques consecutivos por oponente)
+            const details = (this.data && this.data.decisionDetails) ? this.data.decisionDetails : [];
+            if (details.length === 0) return out;
+
+            var bloque = [];
+            var bloques = [];
+            for (var i = 0; i < details.length; i++) {
+                var d = details[i];
+                var opp = (d && d.opponent) ? d.opponent : '';
+                var seg = (d && typeof d.time === 'number') ? d.time / 1000 : 0;
+                if (bloque.length > 0 && bloque[bloque.length - 1].opponent !== opp) {
+                    bloques.push(bloque);
+                    bloque = [];
+                }
+                bloque.push({ opponent: opp, seg: seg });
+            }
+            if (bloque.length > 0) bloques.push(bloque);
+
+            bloques.forEach(function(bloque, idx) {
+                const opKey = 'Oponente ' + (idx + 1);
+                out[opKey] = {};
+                bloque.forEach(function(r, i) {
+                    out[opKey]['ronda ' + (i + 1)] = this._formatSegundosTexto(r.seg);
+                }.bind(this));
+            }.bind(this));
+            return out;
+        } catch (e) { return {}; }
+    },
+
+    // Obtener HTML de tiempos por ronda (apilado por oponente)
+    getRoundTimesHTML: function() {
+        try {
+            const raw = localStorage.getItem('trustGameSave');
+            const save = raw ? JSON.parse(raw) : null;
+            const byOpp = (save && Array.isArray(save.roundTimesByOpponent)) ? save.roundTimesByOpponent : [];
+            const current = (save && Array.isArray(save.roundTimes)) ? save.roundTimes : [];
+            let html = '<div style="margin-top: 6px; font-size: 9px;"><strong>TIEMPOS POR RONDA:</strong></div>';
+            let empty = true;
+            for (let opp = 0; opp < byOpp.length; opp++) {
+                const times = byOpp[opp];
+                if (!times || times.length === 0) continue;
+                empty = false;
+                html += `<div style="margin-top: 4px; font-size: 9px;"><strong>Oponente ${opp + 1}:</strong></div>`;
+                for (let i = 0; i < times.length; i++) {
+                    const s = typeof times[i] === 'number' ? times[i].toFixed(3) : String(times[i]);
+                    html += `<div style="font-size: 8px; margin-left: 8px;">ronda ${i + 1}: ${s} s</div>`;
+                }
+            }
+            if (current.length > 0) {
+                empty = false;
+                const n = byOpp.length + 1;
+                html += `<div style="margin-top: 4px; font-size: 9px;"><strong>Oponente ${n} (actual):</strong></div>`;
+                for (let i = 0; i < current.length; i++) {
+                    const s = typeof current[i] === 'number' ? current[i].toFixed(3) : String(current[i]);
+                    html += `<div style="font-size: 8px; margin-left: 8px;">ronda ${i + 1}: ${s} s</div>`;
+                }
+            }
+            if (empty) html += '<div style="font-size: 8px; color: #888;">Juega rondas (pulsa Iniciar) para ver aquí.</div>';
+            return html;
+        } catch (e) { return '<div style="margin-top: 6px; font-size: 9px;"><strong>TIEMPOS POR RONDA:</strong></div><div style="font-size: 8px; color: #888;">—</div>'; }
     },
     
     // Actualizar la pantalla de estadísticas
@@ -296,22 +564,24 @@ var StatsManager = {
         
         const stats = this.data;
         const sessionTime = this.getSessionTime();
+        const roundTimesHTML = this.getRoundTimesHTML();
         
         this.content.innerHTML = `
             <div style="line-height: 1.3; font-size: 10px;">
                 <div><strong>Tiempo:</strong> ${sessionTime}</div>
                 <div><strong>Juegos:</strong> ${stats.totalGames}</div>
                 <div><strong>Rondas:</strong> ${stats.totalRounds}</div>
-                <div><strong>Coop:</strong> ${stats.cooperationChoices} | <strong>Traid:</strong> ${stats.cheatChoices}</div>
+                ${roundTimesHTML ? roundTimesHTML : ''}
+                <div><strong>Cooperar:</strong> ${stats.cooperationChoices} | <strong>Traicionar:</strong> ${stats.cheatChoices}</div>
                 <div style="margin-top: 4px;"><strong>PUNTOS:</strong></div>
                 <div><strong>Total:</strong> ${stats.totalScore || 0}</div>
                 <div><strong>Promedio:</strong> ${(stats.averageScore || 0).toFixed(1)}</div>
                 <div style="margin-top: 4px; font-size: 9px;"><strong>TIEMPO DECISIÓN:</strong></div>
                 ${stats.decisionTimes && stats.decisionTimes.length > 0 ? `
                     <div style="font-size: 9px;"><strong>Promedio:</strong> ${this.formatTime(stats.averageDecisionTime || 0)}</div>
-                    <div style="font-size: 9px;"><strong>Mín:</strong> ${(stats.minDecisionTime !== null && stats.minDecisionTime !== undefined) ? this.formatTime(stats.minDecisionTime) : 'N/A'}</div>
-                    <div style="font-size: 9px;"><strong>Máx:</strong> ${(stats.maxDecisionTime !== null && stats.maxDecisionTime !== undefined) ? this.formatTime(stats.maxDecisionTime) : 'N/A'}</div>
-                    <div style="font-size: 8px; color: #666;">Decisions: ${stats.decisionTimes.length}</div>
+                    <div style="font-size: 9px;"><strong>Mín:</strong> ${(stats.minDecisionTime !== null && stats.minDecisionTime !== undefined) ? this.formatTime(stats.minDecisionTime) : 'N/D'}</div>
+                    <div style="font-size: 9px;"><strong>Máx:</strong> ${(stats.maxDecisionTime !== null && stats.maxDecisionTime !== undefined) ? this.formatTime(stats.maxDecisionTime) : 'N/D'}</div>
+                    <div style="font-size: 8px; color: #666;">Decisiones: ${stats.decisionTimes.length}</div>
                 ` : `
                     <div style="font-size: 9px; color: #999;">Aún no has tomado decisiones</div>
                     <div style="font-size: 8px; color: #999;">El tiempo se iniciará cuando se activen los botones</div>
@@ -325,21 +595,23 @@ var StatsManager = {
                 ${this.getOpponentStatsHTML()}
                 
                 <div style="margin-top: 4px; font-size: 9px;"><strong>DETALLE:</strong></div>
-                <div style="font-size: 9px;"><span style="color: #4CAF50;">Reward (+2):</span> ${stats.rewardPoints || 0}</div>
-                <div style="font-size: 9px;"><span style="color: #FF9800;">Temptation (+3):</span> ${stats.temptationPoints || 0}</div>
-                <div style="font-size: 9px;"><span style="color: #F44336;">Sucker (-1):</span> ${stats.suckerPoints || 0}</div>
-                <div style="font-size: 9px;"><span style="color: #9E9E9E;">Punishment (0):</span> ${stats.punishmentPoints || 0}</div>
+                <div style="font-size: 9px;"><span style="color: #4CAF50;">Recompensa (+2):</span> ${stats.rewardPoints || 0}</div>
+                <div style="font-size: 9px;"><span style="color: #FF9800;">Tentación (+3):</span> ${stats.temptationPoints || 0}</div>
+                <div style="font-size: 9px;"><span style="color: #F44336;">Engañado (-1):</span> ${stats.suckerPoints || 0}</div>
+                <div style="font-size: 9px;"><span style="color: #9E9E9E;">Castigo (0):</span> ${stats.punishmentPoints || 0}</div>
                 <div style="margin-top: 4px; font-weight: bold; font-size: 9px;">Oponentes:</div>
                 ${this.getOpponentsHTML()}
             </div>
         `;
+        if (typeof this.refreshDpiEventTable === "function") this.refreshDpiEventTable();
     },
     
-    // Obtener HTML de oponentes
+    // Obtener HTML de oponentes (nombres en español)
     getOpponentsHTML: function() {
         let html = '';
         for (let opponent in this.data.opponentsFaced) {
-            html += `<div style="margin-left: 10px;">• ${opponent}: ${this.data.opponentsFaced[opponent]} veces</div>`;
+            const nombreEsp = this.getOpponentNameSpanish(opponent);
+            html += `<div style="margin-left: 10px;">• ${nombreEsp}: ${this.data.opponentsFaced[opponent]} veces</div>`;
         }
         return html;
     },
@@ -370,6 +642,8 @@ var StatsManager = {
     
     // Empezar a escuchar eventos del juego
     startListening: function() {
+        if (this._listeningStarted) return;
+        this._listeningStarted = true;
         console.log('🔊 StatsManager.startListening() llamado - Configurando listeners...');
         // Escuchar cuando empieza una ronda (se desactivan los botones)
         // AQUÍ es donde debemos iniciar el temporizador para la SIGUIENTE decisión
@@ -499,38 +773,44 @@ var StatsManager = {
     buttonsActivationHandled: false,
     activationTimeout: null,
     
-    // Registrar una ronda jugada
+    // Registrar una ronda jugada (usa los payoffs reales del juego: PD.PAYOFFS R, T, S, P)
     recordRound: function(payoffs) {
-        // Evitar duplicados - solo registrar si es una nueva ronda
         const currentTime = Date.now();
         if (currentTime - this.lastRecordedRound < 100) {
-            return; // Misma ronda, no registrar
+            return;
         }
         this.lastRecordedRound = currentTime;
-        
-        this.data.totalRounds++;
-        const myScore = payoffs[0]; // Tu puntuación
-        const theirScore = payoffs[1]; // Puntuación del oponente
-        
-        // Calcular puntos según las reglas del Dilema del Prisionero
-        if (myScore === 2 && theirScore === 2) {
-            // Ambos cooperaron (Reward: R=2)
-            this.data.rewardPoints += 2;
-        } else if (myScore === 3 && theirScore === -1) {
-            // Yo traicioné, él cooperó (Temptation: T=3)
-            this.data.temptationPoints += 3;
-        } else if (myScore === -1 && theirScore === 3) {
-            // Yo cooperé, él traicionó (Sucker: S=-1)
-            this.data.suckerPoints += 1; // Contar cuántas veces fui sucker
-        } else if (myScore === 0 && theirScore === 0) {
-            // Ambos traicionaron (Punishment: P=0)
-            this.data.punishmentPoints += 1; // Contar cuántas veces fue punishment
+
+        var R = 3, T = 5, S = 0, P = 1;
+        if (typeof PD !== 'undefined' && PD.PAYOFFS) {
+            R = PD.PAYOFFS.R;
+            T = PD.PAYOFFS.T;
+            S = PD.PAYOFFS.S;
+            P = PD.PAYOFFS.P;
         }
-        
+
+        this.data.totalRounds++;
+        const myScore = payoffs[0];
+        const theirScore = payoffs[1];
+
+        // Recompensa: ambos cooperaron (R,R)
+        if (myScore === R && theirScore === R) {
+            this.data.rewardPoints += R;
+        } else if (myScore === T && theirScore === S) {
+            // Tentación: yo traicioné, él cooperó (T,S)
+            this.data.temptationPoints += T;
+        } else if (myScore === S && theirScore === T) {
+            // Engañado: yo cooperé, él traicionó (S,T)
+            this.data.suckerPoints += 1;
+        } else if (myScore === P && theirScore === P) {
+            // Castigo: ambos traicionaron (P,P)
+            this.data.punishmentPoints += 1;
+        }
+
         this.data.totalScore += myScore;
         this.data.averageScore = this.data.totalScore / this.data.totalRounds;
         this.data.lastUpdate = this.getLocalDateTime();
-        
+
         this.updateDisplay();
         this.saveStats();
     },
@@ -773,7 +1053,7 @@ var StatsManager = {
     // Formatear tiempo en milisegundos a formato legible
     formatTime: function(ms) {
         if (ms === null || ms === undefined || isNaN(ms)) {
-            return 'N/A';
+            return 'N/D';
         }
         if (ms < 1000) {
             return ms.toFixed(0) + 'ms';
@@ -790,7 +1070,7 @@ var StatsManager = {
     getChoiceStats: function(choice) {
         const stats = this.data.timesByChoice[choice];
         if (!stats || stats.count === 0) {
-            return 'N/A (juega nuevas rondas)';
+            return 'N/D (juega nuevas rondas)';
         }
         return `${this.formatTime(stats.average)} (${stats.count} veces)`;
     },
@@ -805,7 +1085,7 @@ var StatsManager = {
         }).sort();
         
         if (opponentNames.length === 0) {
-            return '<div style="font-size: 8px; color: #666;">N/A (juega nuevas rondas)</div>';
+            return '<div style="font-size: 8px; color: #666;">N/D (juega nuevas rondas)</div>';
         }
         
         // Mostrar solo los 3 primeros oponentes para no saturar la UI
@@ -815,7 +1095,8 @@ var StatsManager = {
             const oppName = displayOpponents[i];
             const oppStats = opponents[oppName];
             if (oppStats && oppStats.count > 0) {
-                html += `<div style="font-size: 8px; margin-left: 8px;">• ${oppName.substring(0, 15)}: ${this.formatTime(oppStats.average)}</div>`;
+                const nombreEsp = this.getOpponentNameSpanish(oppName);
+                html += `<div style="font-size: 8px; margin-left: 8px;">• ${nombreEsp}: ${this.formatTime(oppStats.average)}</div>`;
             }
         }
         
@@ -823,10 +1104,10 @@ var StatsManager = {
             html += `<div style="font-size: 8px; color: #666; margin-left: 8px;">... y ${opponentNames.length - 3} más</div>`;
         }
         
-        return html || '<div style="font-size: 8px; color: #666;">N/A (juega nuevas rondas)</div>';
+        return html || '<div style="font-size: 8px; color: #666;">N/D (juega nuevas rondas)</div>';
     },
     
-    // Obtener nombre del oponente
+    // Obtener nombre del oponente (inglés, uso interno)
     getOpponentName: function(opponentId) {
         const names = {
             'tft': 'Copycat',
@@ -839,6 +1120,22 @@ var StatsManager = {
             'random': 'Random'
         };
         return names[opponentId] || opponentId;
+    },
+
+    // Nombre del oponente en español (para exportación y pantalla)
+    getOpponentNameSpanish: function(englishName) {
+        const nombres = {
+            'Copycat': 'Copión',
+            'Always Cheat': 'Siempre Traiciona',
+            'Always Cooperate': 'Siempre Coopera',
+            'Grudger': 'Rencoroso',
+            'Detective': 'Detective',
+            'Copykitten': 'Gatito Copión',
+            'Simpleton': 'Simple',
+            'Random': 'Aleatorio',
+            'Desconocido': 'Desconocido'
+        };
+        return nombres[englishName] || englishName;
     },
     
     // Guardar estadísticas en localStorage
@@ -920,17 +1217,31 @@ var StatsManager = {
         }
     },
     
-    // Descargar estadísticas como archivo JSON
+    // Descargar estadísticas como archivo JSON (estructura clara y legible)
     downloadStats: function() {
-        // Traducir los datos al español para el JSON
+        const decisionTimes = this.data.decisionTimes || [];
+        const msASeg = function(ms) { return Math.round((ms || 0) / 10) / 100; };
+        const todosEnSegundos = decisionTimes.map(function(ms) { return msASeg(ms); });
+        const roundTimesExport = this.getRoundTimesForExport();
+
         const dataToDownload = {
-            versionJuego: 'The Evolution of Trust - Exportación de Estadísticas',
+            titulo: 'The Evolution of Trust - Estadísticas de sesión',
             fechaDescarga: this.getLocalDateTime(),
             zonaHoraria: Intl.DateTimeFormat().resolvedOptions().timeZone,
             idioma: navigator.language,
-            inicioSesion: this.data.sessionStart,
-            ultimaActualizacion: this.data.lastUpdate,
-            tiempoTotal: this.getSessionTime(),
+
+            resumen: {
+                tiempoTotalSesion: this.getSessionTime(),
+                inicioSesion: this.data.sessionStart,
+                ultimaActualizacion: this.data.lastUpdate,
+                totalJuegos: this.data.totalGames,
+                totalRondas: this.data.totalRounds,
+                totalDecisiones: this.data.decisionDetails ? this.data.decisionDetails.length : (this.data.cooperationChoices + this.data.cheatChoices),
+                puntosTotales: this.data.totalScore
+            },
+
+            tiemposPorRondaPorOponente: roundTimesExport,
+
             juegos: {
                 total: this.data.totalGames,
                 ganados: this.data.gamesWon,
@@ -940,7 +1251,6 @@ var StatsManager = {
                 total: this.data.totalRounds
             },
             decisiones: {
-                // Calcular desde decisionDetails para mayor precisión
                 cooperar: this.data.decisionDetails ? this.data.decisionDetails.filter(d => d.choice === 'cooperate').length : this.data.cooperationChoices,
                 traicionar: this.data.decisionDetails ? this.data.decisionDetails.filter(d => d.choice === 'cheat').length : this.data.cheatChoices,
                 total: this.data.decisionDetails ? this.data.decisionDetails.length : (this.data.cooperationChoices + this.data.cheatChoices)
@@ -950,65 +1260,67 @@ var StatsManager = {
                 promedio: this.data.averageScore,
                 recompensa: this.data.rewardPoints,
                 tentacion: this.data.temptationPoints,
-                sucker: this.data.suckerPoints,
+                engañado: this.data.suckerPoints,
                 castigo: this.data.punishmentPoints
             },
-            tiempoDecision: {
-                promedio: this.formatTime(this.data.averageDecisionTime || 0),
-                promedioMs: this.data.averageDecisionTime || 0,
-                minimo: this.data.minDecisionTime !== null ? this.formatTime(this.data.minDecisionTime) : 'N/A',
-                minimoMs: this.data.minDecisionTime,
-                maximo: this.data.maxDecisionTime !== null ? this.formatTime(this.data.maxDecisionTime) : 'N/A',
-                maximoMs: this.data.maxDecisionTime,
-                total: this.data.totalDecisionTime || 0,
-                decisiones: this.data.decisionTimes ? this.data.decisionTimes.length : 0,
-                todosLosTiempos: this.data.decisionTimes || []
+            tiempoDeDecision: {
+                descripcion: 'Tiempo que tardaste en cada decisión (en segundos)',
+                promedioSegundos: decisionTimes.length ? msASeg(this.data.averageDecisionTime || 0) : 0,
+                minimoSegundos: this.data.minDecisionTime != null ? msASeg(this.data.minDecisionTime) : null,
+                maximoSegundos: this.data.maxDecisionTime != null ? msASeg(this.data.maxDecisionTime) : null,
+                numeroDeDecisiones: decisionTimes.length,
+                cadaTiempoEnSegundos: todosEnSegundos
             },
-            porTipo: {
+            tiempoDecisionMilisegundos: {
+                promedioFormato: this.formatTime(this.data.averageDecisionTime || 0),
+                promedioMilisegundos: this.data.averageDecisionTime || 0,
+                minimoMilisegundos: this.data.minDecisionTime,
+                maximoMilisegundos: this.data.maxDecisionTime,
+                totalMilisegundos: this.data.totalDecisionTime || 0,
+                todosLosTiemposMilisegundos: decisionTimes
+            },
+            porTipoDeDecision: {
                 cooperar: {
-                    promedio: this.data.timesByChoice && this.data.timesByChoice.cooperate ? 
-                        this.formatTime(this.data.timesByChoice.cooperate.average || 0) : 'N/A',
-                    promedioMs: this.data.timesByChoice && this.data.timesByChoice.cooperate ? 
-                        this.data.timesByChoice.cooperate.average || 0 : 0,
-                    veces: this.data.timesByChoice && this.data.timesByChoice.cooperate ? 
+                    promedioSegundos: this.data.timesByChoice && this.data.timesByChoice.cooperate ?
+                        msASeg(this.data.timesByChoice.cooperate.average || 0) : 0,
+                    veces: this.data.timesByChoice && this.data.timesByChoice.cooperate ?
                         this.data.timesByChoice.cooperate.count || 0 : 0
                 },
                 traicionar: {
-                    promedio: this.data.timesByChoice && this.data.timesByChoice.cheat ? 
-                        this.formatTime(this.data.timesByChoice.cheat.average || 0) : 'N/A',
-                    promedioMs: this.data.timesByChoice && this.data.timesByChoice.cheat ? 
-                        this.data.timesByChoice.cheat.average || 0 : 0,
-                    veces: this.data.timesByChoice && this.data.timesByChoice.cheat ? 
+                    promedioSegundos: this.data.timesByChoice && this.data.timesByChoice.cheat ?
+                        msASeg(this.data.timesByChoice.cheat.average || 0) : 0,
+                    veces: this.data.timesByChoice && this.data.timesByChoice.cheat ?
                         this.data.timesByChoice.cheat.count || 0 : 0
                 }
             },
             porOponente: {},
             oponentesEnfrentados: {},
-            detallesDecisiones: (this.data.decisionDetails || []).map(detail => ({
-                tiempo: this.formatTime(detail.time),
-                tiempoMs: detail.time,
-                oponente: detail.opponent,
+            historialDecisiones: (this.data.decisionDetails || []).map(detail => ({
+                tiempoSegundos: msASeg(detail.time || 0),
+                oponente: this.getOpponentNameSpanish(detail.opponent || ''),
                 decision: detail.choice === 'cooperate' ? 'Cooperar' : 'Traicionar',
-                timestamp: new Date(detail.timestamp).toLocaleString('es-MX')
+                fechaHora: new Date(detail.timestamp).toLocaleString('es-MX')
             }))
         };
         
-        // Traducir oponentes enfrentados
+        // Oponentes enfrentados (claves en español)
         if (this.data.opponentsFaced) {
             for (let opponent in this.data.opponentsFaced) {
-                dataToDownload.oponentesEnfrentados[opponent] = this.data.opponentsFaced[opponent];
+                const nombreEsp = this.getOpponentNameSpanish(opponent);
+                dataToDownload.oponentesEnfrentados[nombreEsp] = this.data.opponentsFaced[opponent];
             }
         }
         
-        // Traducir tiempos por oponente
+        // Tiempos por oponente (nombres en español, promedio en segundos)
         if (this.data.timesByOpponent) {
             for (let opponent in this.data.timesByOpponent) {
                 const oppData = this.data.timesByOpponent[opponent];
-                dataToDownload.porOponente[opponent] = {
-                    promedio: this.formatTime(oppData.average || 0),
-                    promedioMs: oppData.average || 0,
+                const avgSec = (oppData.average || 0) / 1000;
+                const nombreEsp = this.getOpponentNameSpanish(opponent);
+                dataToDownload.porOponente[nombreEsp] = {
+                    promedioSegundos: Math.round(avgSec * 100) / 100,
                     veces: oppData.count || 0,
-                    total: oppData.total || 0
+                    totalMilisegundos: oppData.total || 0
                 };
             }
         }
